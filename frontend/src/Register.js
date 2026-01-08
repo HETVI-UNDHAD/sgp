@@ -12,7 +12,8 @@ function Register() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    const res = await fetch("http://localhost:5000/api/register", {
+    const API_BASE = process.env.REACT_APP_API_URL || ""; // set to full origin like https://api.example.com or leave empty for same origin
+    const res = await fetch(`${API_BASE}/api/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(form)

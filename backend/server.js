@@ -15,6 +15,9 @@ mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("MongoDB Connected"))
   .catch(err => console.log("Mongo Error:", err));
 
+// Simple health check so remote clients can verify reachability
+app.get("/api/ping", (req, res) => res.json({ ok: true, time: Date.now() }));
+
 app.use("/api", authRoutes);
 
 const PORT = process.env.PORT || 5000;
