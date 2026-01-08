@@ -1,0 +1,7 @@
+# Ensure consistent line endings
+* text=auto
+
+# Keep binary files unchanged
+*.png binary
+*.jpg binary
+*.gif binary
