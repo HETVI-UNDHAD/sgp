@@ -1,6 +1,9 @@
+
+import "./Register.css";
 import { useState } from "react";
 import axios from "axios";
-import "./Register.css";
+
+
 
 function Register() {
   const [form, setForm] = useState({
@@ -22,8 +25,8 @@ function Register() {
   const register = async () => {
     try {
       await axios.post("http://localhost:5000/api/auth/register", form);
-      setShowOtp(true);
       alert("OTP sent to email");
+      setShowOtp(true);
     } catch (err) {
       alert(err.response?.data?.msg || "Register error");
     }
@@ -42,27 +45,23 @@ function Register() {
   };
 
   return (
-    <div className="register-container">
-      <div className="register-card">
-        <h2>Student Registration</h2>
+    <div>
+      <input name="fullName" placeholder="Full Name" onChange={handleChange} />
+      <input name="email" placeholder="Email" onChange={handleChange} />
+      <input name="password" type="password" placeholder="Password" onChange={handleChange} />
+      <input name="enrollment" placeholder="Enrollment" onChange={handleChange} />
+      <input name="course" placeholder="Course" onChange={handleChange} />
+      <input name="semester" placeholder="Semester" onChange={handleChange} />
+      <input name="college" placeholder="College" onChange={handleChange} />
 
-        <input name="fullName" placeholder="Full Name" onChange={handleChange} />
-        <input name="email" placeholder="Email" onChange={handleChange} />
-        <input name="password" type="password" placeholder="Password" onChange={handleChange} />
-        <input name="enrollment" placeholder="Enrollment No" onChange={handleChange} />
-        <input name="course" placeholder="Course / Branch" onChange={handleChange} />
-        <input name="semester" placeholder="Semester / Year" onChange={handleChange} />
-        <input name="college" placeholder="College Name" onChange={handleChange} />
+      <button onClick={register}>Register</button>
 
-        <button onClick={register}>Register</button>
-
-        {showOtp && (
-          <>
-            <input placeholder="Enter OTP" onChange={(e) => setOtp(e.target.value)} />
-            <button onClick={verifyOtp}>Verify OTP</button>
-          </>
-        )}
-      </div>
+      {showOtp && (
+        <>
+          <input placeholder="Enter OTP" onChange={(e) => setOtp(e.target.value)} />
+          <button onClick={verifyOtp}>Verify OTP</button>
+        </>
+      )}
     </div>
   );
 }

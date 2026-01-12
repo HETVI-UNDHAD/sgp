@@ -1,11 +1,10 @@
 const express = require("express");
-const router = express.Router(); // ✅ VERY IMPORTANT
-
+const router = express.Router();
 const bcrypt = require("bcryptjs");
 const User = require("../models/User");
 const nodemailer = require("nodemailer");
-module.exports = router;
-// EMAIL TRANSPORTER
+
+/* ---------- EMAIL SETUP ---------- */
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
@@ -14,11 +13,9 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-// ================= REGISTER =================
+/* ---------- REGISTER ---------- */
 router.post("/register", async (req, res) => {
   try {
-    console.log("REQ BODY 👉", req.body);
-
     const {
       fullName,
       email,
@@ -29,14 +26,12 @@ router.post("/register", async (req, res) => {
       college,
     } = req.body;
 
-    if (!email || !password) {
+    if (!email || !password)
       return res.status(400).json({ msg: "Email & password required" });
-    }
 
-    const existing = await User.findOne({ email });
-    if (existing) {
+    const existingUser = await User.findOne({ email });
+    if (existingUser)
       return res.status(400).json({ msg: "Email already registered" });
-    }
 
     const hashedPassword = await bcrypt.hash(password, 10);
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
@@ -64,29 +59,33 @@ router.post("/register", async (req, res) => {
 
     res.json({ msg: "OTP sent to email" });
   } catch (err) {
-    console.error("REGISTER ERROR ❌", err);
-    res.status(500).json({ msg: "Server error" });
+    console.error(err);
+    res.status(500).json({ msg: "Register error" });
   }
 });
 
-// ================= VERIFY OTP =================
+/* ---------- VERIFY OTP ---------- */
 router.post("/verify-otp", async (req, res) => {
   try {
     const { email, otp } = req.body;
 
     const user = await User.findOne({ email });
-    if (!user || user.otp !== otp) {
+    if (!user)
+      return res.status(400).json({ msg: "User not found" });
+
+    // ⚠️ VERY IMPORTANT: STRING COMPARISON
+    if (user.otp !== otp)
       return res.status(400).json({ msg: "Invalid OTP" });
-    }
 
     user.isVerified = true;
-    user.otp = "";
+    user.otp = null; // OTP remove after success
     await user.save();
 
-    res.json({ msg: "User verified successfully" });
+    res.json({ msg: "OTP verified successfully" });
   } catch (err) {
-    res.status(500).json({ msg: "Server error" });
+    console.error(err);
+    res.status(500).json({ msg: "OTP error" });
   }
 });
 
-module.exports = router; // ✅ VERY IMPORTANT
+module.exports = router;
