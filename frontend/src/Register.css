@@ -1,58 +1,49 @@
-/* Simple styles for register form */
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial;
 }
 
 .register-container {
   display: flex;
-  align-items: center;
   justify-content: center;
+  align-items: center;
   min-height: 100vh;
   background: #f5f7fb;
 }
 
 .register-card {
-  background: #ffffff;
+  background: white;
   padding: 28px;
   border-radius: 8px;
-  box-shadow: 0 6px 18px rgba(33, 47, 60, 0.08);
   width: 100%;
   max-width: 420px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
 }
 
 .register-card h2 {
-  margin: 0 0 16px 0;
-  font-size: 20px;
-  color: #1f2937;
+  text-align: center;
+  margin-bottom: 16px;
 }
 
 .register-card input {
   width: 100%;
-  padding: 10px 12px;
-  margin: 8px 0;
-  border: 1px solid #e5e7eb;
+  padding: 10px;
+  margin: 6px 0;
   border-radius: 6px;
-  font-size: 14px;
+  border: 1px solid #ddd;
 }
 
 .register-card button {
   width: 100%;
-  padding: 10px 12px;
+  padding: 10px;
   margin-top: 12px;
   background: #2563eb;
   color: white;
   border: none;
   border-radius: 6px;
+  font-weight: bold;
   cursor: pointer;
-  font-weight: 600;
 }
 
 .register-card button:hover {
   background: #1d4ed8;
-}
-
-.register-msg {
-  margin-top: 12px;
-  color: #065f46;
-  font-weight: 600;
 }
