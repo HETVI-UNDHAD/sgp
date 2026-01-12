@@ -1,10 +1,11 @@
 const express = require("express");
-const router = express.Router(); // ✅ YE LINE MISSING THI
+const router = express.Router(); // ✅ VERY IMPORTANT
+
 const bcrypt = require("bcryptjs");
 const User = require("../models/User");
 const nodemailer = require("nodemailer");
-
-// 📧 Email transporter
+module.exports = router;
+// EMAIL TRANSPORTER
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
@@ -13,7 +14,7 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-// 📝 REGISTER ROUTE
+// ================= REGISTER =================
 router.post("/register", async (req, res) => {
   try {
     console.log("REQ BODY 👉", req.body);
@@ -68,4 +69,24 @@ router.post("/register", async (req, res) => {
   }
 });
 
-module.exports = router; // ✅ YE BHI ZAROORI HAI
+// ================= VERIFY OTP =================
+router.post("/verify-otp", async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+
+    const user = await User.findOne({ email });
+    if (!user || user.otp !== otp) {
+      return res.status(400).json({ msg: "Invalid OTP" });
+    }
+
+    user.isVerified = true;
+    user.otp = "";
+    await user.save();
+
+    res.json({ msg: "User verified successfully" });
+  } catch (err) {
+    res.status(500).json({ msg: "Server error" });
+  }
+});
+
+module.exports = router; // ✅ VERY IMPORTANT
