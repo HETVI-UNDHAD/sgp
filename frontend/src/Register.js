@@ -1,7 +1,6 @@
-// src/Register.js
 import { useState } from "react";
 import axios from "axios";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import "./Register.css";
 
 function Register() {
@@ -24,8 +23,6 @@ function Register() {
     try {
       await axios.post("http://localhost:5000/api/auth/register", form);
       alert("OTP sent to email");
-
-      // 👉 go to verify page with email
       navigate("/verify-otp", { state: { email: form.email } });
     } catch (err) {
       alert(err.response?.data?.msg || "Register error");
@@ -46,6 +43,10 @@ function Register() {
         <input name="college" placeholder="College" onChange={handleChange} />
 
         <button onClick={register}>Register</button>
+
+        <p style={{ marginTop: "12px", textAlign: "center" }}>
+          Already have an account? <Link to="/login">Login</Link>
+        </p>
       </div>
     </div>
   );
