@@ -14,7 +14,7 @@ function VerifyOtp() {
   const location = useLocation();
 
   const email = location.state?.email;
-
+if (!email) return <h3>Invalid Access</h3>;
   const verifyOtp = async () => {
     try {
       await axios.post("http://localhost:5000/api/auth/verify-otp", {

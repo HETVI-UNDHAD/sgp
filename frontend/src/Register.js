@@ -18,16 +18,15 @@ function Register() {
 
   const handleChange = (e) =>
     setForm({ ...form, [e.target.name]: e.target.value });
+const register = async () => {
+  try {
+    await axios.post("http://localhost:5000/api/auth/register", form);
+    navigate("/verify-otp", { state: { email: form.email } });
+  } catch (err) {
+    alert(err.response?.data?.msg || "Register error");
+  }
+};
 
-  const register = async () => {
-    try {
-      await axios.post("http://localhost:5000/api/auth/register", form);
-      alert("OTP sent to email");
-      navigate("/verify-otp", { state: { email: form.email } });
-    } catch (err) {
-      alert(err.response?.data?.msg || "Register error");
-    }
-  };
 
   return (
     <div className="register-container">
