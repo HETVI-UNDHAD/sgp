@@ -1,7 +1,11 @@
 import { useState } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
 
 function AddMembers() {
+  const { groupId } = useParams(); // ✅ URL se groupId
+  const navigate = useNavigate();
+
   const [emails, setEmails] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -11,17 +15,16 @@ function AddMembers() {
       return;
     }
 
-    const groupId = localStorage.getItem("groupId");
     if (!groupId) {
-      alert("Group not found. Please create group again.");
+      alert("Group not found ❌");
       return;
     }
 
-    // split emails by comma
+    // comma separated emails → array
     const emailList = emails
       .split(",")
-      .map(e => e.trim())
-      .filter(e => e);
+      .map((e) => e.trim())
+      .filter((e) => e);
 
     if (emailList.length === 0) {
       alert("Invalid email format");
@@ -32,14 +35,17 @@ function AddMembers() {
       setLoading(true);
 
       for (let email of emailList) {
-        await axios.post(
-          "http://localhost:5000/api/group/invite",
-          { email, groupId }
-        );
+        await axios.post("http://localhost:5000/api/group/invite", {
+          email,
+          groupId,
+        });
       }
 
       alert("Invitations sent successfully ✅");
       setEmails("");
+
+      // ✅ group details page pe redirect
+      navigate(`/group/${groupId}`);
     } catch (err) {
       console.error(err);
       alert(err.response?.data?.msg || "Error sending invite ❌");

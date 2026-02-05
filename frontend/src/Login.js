@@ -1,11 +1,16 @@
 import { useState } from "react";
 import axios from "axios";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 
 function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // ✅ get invite token
+  const inviteToken = location.state?.inviteToken;
 
   const login = async () => {
     try {
@@ -14,11 +19,15 @@ function Login() {
         { email, password }
       );
 
-      // ✅ store user
       localStorage.setItem("user", JSON.stringify(res.data.user));
 
       alert("Login successful 🎉");
-      navigate("/dashboard");
+
+      if (inviteToken) {
+        navigate(`/accept-invite/${inviteToken}`);
+      } else {
+        navigate("/dashboard");
+      }
     } catch (err) {
       alert(err.response?.data?.msg || "Login error");
     }

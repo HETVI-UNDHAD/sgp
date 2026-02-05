@@ -1,9 +1,10 @@
 import { useEffect } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
 
 function AcceptInvite() {
-  const { token } = useParams(); // ✅ ONLY token
+  const { token } = useParams(); // only token
+  const navigate = useNavigate();
 
   useEffect(() => {
     const acceptInvite = async () => {
@@ -12,21 +13,30 @@ function AcceptInvite() {
           `http://localhost:5000/api/group/accept/${token}`
         );
 
-        alert("You have joined the group 🎉");
-        console.log(res.data);
+        // 🟡 CASE 1: User not registered
+        if (res.data.status === "NOT_REGISTERED") {
+          alert("Please register first to join the group");
+          navigate("/register", {
+            state: { email: res.data.email },
+          });
+        }
 
-        // redirect after success
-        window.location.href = "/dashboard";
+        // 🟢 CASE 2: User registered & joined group
+        if (res.data.status === "JOINED") {
+          alert("You have joined the group 🎉");
+          navigate("/login");
+        }
       } catch (err) {
         console.error(err);
         alert("Invite link is invalid or expired ❌");
+        navigate("/login");
       }
     };
 
     if (token) {
       acceptInvite();
     }
-  }, [token]);
+  }, [token, navigate]);
 
   return <h2>Joining group...</h2>;
 }
