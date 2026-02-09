@@ -111,7 +111,7 @@ router.get("/accept/:token", async (req, res) => {
 
     const user = await User.findOne({ email });
 
-    // 👤 Not registered
+    // 🟡 USER NOT REGISTERED → REGISTER FLOW
     if (!user) {
       return res.json({
         status: "NOT_REGISTERED",
@@ -125,22 +125,30 @@ router.get("/accept/:token", async (req, res) => {
       return res.status(404).json({ msg: "Group not found" });
     }
 
-    // ✅ ObjectId-safe check
-    const alreadyMember = group.members.some((m) =>
-      m.equals(user._id)
-    );
-
-    if (!alreadyMember) {
+    // add member only once
+    if (!group.members.includes(user._id)) {
       group.members.push(user._id);
       await group.save();
     }
 
+    // 🔑 AUTO LOGIN TOKEN
+    const loginToken = jwt.sign(
+      { id: user._id },
+      process.env.JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+
     res.json({
       status: "ACCEPTED",
-      msg: "Joined group successfully",
+      token: loginToken,
+      user: {
+        _id: user._id,
+        fullName: user.fullName,
+        email: user.email,
+      },
+      groupId,
     });
   } catch (err) {
-    console.error("ACCEPT ERROR ❌", err);
     res.status(400).json({
       status: "INVALID",
       msg: "Invite expired or invalid",

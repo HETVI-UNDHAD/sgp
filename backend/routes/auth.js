@@ -1,31 +1,25 @@
 const express = require("express");
 const router = express.Router();
 const bcrypt = require("bcryptjs");
-const User = require("../models/User");
+const jwt = require("jsonwebtoken");
 const nodemailer = require("nodemailer");
+const User = require("../models/User");
 
 /* ================= TEMP OTP STORAGE ================= */
 const pendingUsers = {};
 
-/* ================= CHECK EMAIL ENV ================= */
-if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-  console.error("❌ EMAIL ENV VARIABLES MISSING");
-}
-
 /* ================= EMAIL CONFIG ================= */
 const transporter = nodemailer.createTransport({
-  service: "gmail", // ✅ IMPORTANT
+  service: "gmail",
   auth: {
     user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS, // Gmail App Password
+    pass: process.env.EMAIL_PASS,
   },
 });
 
 /* ================= REGISTER ================= */
 router.post("/register", async (req, res) => {
   try {
-    console.log("📩 Register request received");
-
     const {
       fullName,
       email,
@@ -59,7 +53,7 @@ router.post("/register", async (req, res) => {
         college,
       },
       otp,
-      expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes
+      expiresAt: Date.now() + 5 * 60 * 1000,
     };
 
     await transporter.sendMail({
@@ -69,16 +63,14 @@ router.post("/register", async (req, res) => {
       text: `Your OTP is ${otp}. It will expire in 5 minutes.`,
     });
 
-    console.log("✅ OTP sent to:", email);
-
-    res.status(200).json({ msg: "OTP sent to email" });
+    res.json({ msg: "OTP sent to email" });
   } catch (err) {
-    console.error("❌ REGISTER ERROR", err);
+    console.error("REGISTER ERROR ❌", err);
     res.status(500).json({ msg: "Server error" });
   }
 });
 
-/* ================= VERIFY OTP ================= */
+/* ================= VERIFY OTP (AUTO LOGIN) ================= */
 router.post("/verify-otp", async (req, res) => {
   try {
     const { email, otp } = req.body;
@@ -105,9 +97,24 @@ router.post("/verify-otp", async (req, res) => {
     await newUser.save();
     delete pendingUsers[email];
 
-    res.json({ msg: "OTP verified successfully" });
+    // 🔑 AUTO LOGIN TOKEN
+    const token = jwt.sign(
+      { id: newUser._id },
+      process.env.JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+
+    res.json({
+      msg: "OTP verified & logged in",
+      token,
+      user: {
+        _id: newUser._id,
+        fullName: newUser.fullName,
+        email: newUser.email,
+      },
+    });
   } catch (err) {
-    console.error("❌ OTP ERROR", err);
+    console.error("OTP ERROR ❌", err);
     res.status(500).json({ msg: "OTP error" });
   }
 });
@@ -135,16 +142,24 @@ router.post("/login", async (req, res) => {
       return res.status(400).json({ msg: "Invalid password" });
     }
 
+    // 🔑 LOGIN TOKEN
+    const token = jwt.sign(
+      { id: user._id },
+      process.env.JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+
     res.json({
       msg: "Login successful",
+      token,
       user: {
-        id: user._id,
+        _id: user._id,
         fullName: user.fullName,
         email: user.email,
       },
     });
   } catch (err) {
-    console.error("❌ LOGIN ERROR", err);
+    console.error("LOGIN ERROR ❌", err);
     res.status(500).json({ msg: "Login error" });
   }
 });
