@@ -1,39 +1,72 @@
-// FIRST LINE
+// ================= LOAD ENV =================
 require("dotenv").config();
 
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
 
-// ROUTES
-const authRoutes = require("./routes/auth");
-const groupRoutes = require("./routes/group"); // 👈 IMPORTANT
-
 const app = express();
 
-/* ================= MIDDLEWARE ================= */
-app.use(cors());
-app.use(express.json());
+/* =====================================================
+   MIDDLEWARE
+===================================================== */
 
-/* ================= ROUTES ================= */
-app.use("/api/auth", authRoutes);
-app.use("/api/group", groupRoutes); // 👈 USE VARIABLE, not require()
+// ✅ CORS CONFIG (Development + Production Ready)
+app.use(
+  cors({
+    origin: process.env.CLIENT_URL || "http://localhost:3000",
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE"],
+  })
+);
 
-/* ================= DATABASE ================= */
+// ✅ BODY PARSER
+app.use(express.json({ limit: "5mb" }));
+
+/* =====================================================
+   HEALTH CHECK ROUTE
+===================================================== */
+app.get("/", (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: "🚀 SquadUp Backend is running",
+  });
+});
+
+/* =====================================================
+   ROUTES
+===================================================== */
+app.use("/api/auth", require("./routes/auth"));
+app.use("/api/group", require("./routes/group"));
+
+/* =====================================================
+   GLOBAL ERROR HANDLER
+===================================================== */
+app.use((err, req, res, next) => {
+  console.error("❌ GLOBAL ERROR:", err.message);
+
+  res.status(500).json({
+    success: false,
+    message: "Something went wrong on the server",
+  });
+});
+
+/* =====================================================
+   DATABASE CONNECTION
+===================================================== */
 mongoose
   .connect(process.env.MONGO_URI)
-  .then(() => console.log("✅ MongoDB Connected"))
-  .catch((err) => console.error("❌ Mongo Error:", err));
+  .then(() => console.log("✅ MongoDB Connected Successfully"))
+  .catch((err) => {
+    console.error("❌ MongoDB Connection Error:", err.message);
+    process.exit(1);
+  });
 
-/* ================= SERVER ================= */
+/* =====================================================
+   START SERVER
+===================================================== */
 const PORT = process.env.PORT || 5000;
+
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
-
-/* ================= ENV CHECK ================= */
-console.log("EMAIL_USER =", process.env.EMAIL_USER);
-console.log(
-  "EMAIL_PASS =",
-  process.env.EMAIL_PASS ? "LOADED" : "MISSING"
-);

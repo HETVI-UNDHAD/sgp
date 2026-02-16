@@ -1,17 +1,16 @@
 import { useState } from "react";
 import axios from "axios";
-import { useNavigate, useLocation, Link } from "react-router-dom";
+import { useParams, useNavigate, Link } from "react-router-dom";
 import squadUpLogo from "./squaduplogo.png";
 
-function Login() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [errors, setErrors] = useState({});
-  const [toast, setToast] = useState({ show: false, msg: "", type: "" });
-
+function ResetPassword() {
+  const { token } = useParams();
   const navigate = useNavigate();
-  const location = useLocation();
-  const inviteToken = location.state?.inviteToken;
+
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState("");
+  const [toast, setToast] = useState({ show: false, msg: "", type: "" });
 
   /* ================= TOAST ================= */
   const showToast = (msg, type = "success") => {
@@ -19,48 +18,33 @@ function Login() {
     setTimeout(() => setToast({ show: false, msg: "", type: "" }), 3000);
   };
 
-  /* ================= VALIDATION ================= */
-  const validate = () => {
-    let newErrors = {};
+  /* ================= RESET ================= */
+  const reset = async () => {
+    if (password.length < 6) {
+      setError("Password must be at least 6 characters");
+      return;
+    }
 
-    if (!email.includes("@")) newErrors.email = "Enter a valid email";
-    if (!password) newErrors.password = "Password is required";
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
-  /* ================= LOGIN ================= */
-  const login = async () => {
-    if (!validate()) {
-      showToast("Please fix highlighted fields", "error");
+    if (password !== confirmPassword) {
+      setError("Passwords do not match");
       return;
     }
 
     try {
       const res = await axios.post(
-        "http://localhost:5000/api/auth/login",
-        {
-          email: email.trim().toLowerCase(),
-          password,
-        }
+        "http://localhost:5000/api/auth/reset-password",
+        { token, password }
       );
 
-      localStorage.setItem("user", JSON.stringify(res.data.user));
-
-      showToast("Login successful 🎉", "success");
+      showToast(res.data.msg || "Password reset successful", "success");
 
       setTimeout(() => {
-        if (inviteToken) {
-          navigate(`/accept-invite/${inviteToken}`);
-        } else {
-          navigate("/dashboard");
-        }
-      }, 1000);
+        navigate("/login");
+      }, 1500);
     } catch (err) {
-      console.log("LOGIN ERROR 👉", err.response?.data || err.message);
+      console.log("RESET ERROR 👉", err.response?.data || err.message);
       showToast(
-        err.response?.data?.msg || "Login failed",
+        err.response?.data?.msg || "Reset password failed",
         "error"
       );
     }
@@ -71,7 +55,7 @@ function Login() {
       <div className="page-wrapper">
         <div className="card">
 
-          {/* LEFT PANEL */}
+          {/* LEFT */}
           <div className="left-panel">
             <div className="logo-circle">
               <img src={squadUpLogo} alt="SquadUp Logo" />
@@ -80,53 +64,41 @@ function Login() {
             <p>Level Up Your SquadUp....😉</p>
           </div>
 
-          {/* RIGHT PANEL */}
+          {/* RIGHT */}
           <div className="right-panel">
-            <h2>Login</h2>
+            <h2>Reset Password</h2>
 
             <div className="field">
               <input
-                placeholder="Email"
-                value={email}
+                type="password"
+                placeholder="New Password"
+                value={password}
                 onChange={(e) => {
-                  setEmail(e.target.value);
-                  setErrors({ ...errors, email: "" });
+                  setPassword(e.target.value);
+                  setError("");
                 }}
-                className={errors.email ? "error" : ""}
+                className={error ? "error" : ""}
               />
-              {errors.email && (
-                <span className="error-text">{errors.email}</span>
-              )}
             </div>
 
             <div className="field">
               <input
                 type="password"
-                placeholder="Password"
-                value={password}
+                placeholder="Confirm Password"
+                value={confirmPassword}
                 onChange={(e) => {
-                  setPassword(e.target.value);
-                  setErrors({ ...errors, password: "" });
+                  setConfirmPassword(e.target.value);
+                  setError("");
                 }}
-                className={errors.password ? "error" : ""}
+                className={error ? "error" : ""}
               />
-              {errors.password && (
-                <span className="error-text">{errors.password}</span>
-              )}
+              {error && <span className="error-text">{error}</span>}
             </div>
 
-            {/* 🔑 FORGOT PASSWORD */}
-            <div className="forgot">
-              <Link to="/forgot-password">Forgot password?</Link>
-            </div>
-
-            <button onClick={login}>Login →</button>
+            <button onClick={reset}>Reset Password →</button>
 
             <p>
-              Don’t have an account?{" "}
-              <Link to="/register" state={{ inviteToken }}>
-                Register
-              </Link>
+              Back to <Link to="/login">Login</Link>
             </p>
           </div>
         </div>
@@ -134,9 +106,7 @@ function Login() {
 
       {/* TOAST */}
       {toast.show && (
-        <div className={`toast ${toast.type}`}>
-          {toast.msg}
-        </div>
+        <div className={`toast ${toast.type}`}>{toast.msg}</div>
       )}
 
       {/* CSS */}
@@ -164,7 +134,6 @@ function Login() {
           box-shadow: 0 25px 60px rgba(0,0,0,0.15);
         }
 
-        /* LEFT */
         .left-panel {
           width: 45%;
           background: linear-gradient(160deg, #0b3e71, #1f5fa3);
@@ -192,17 +161,6 @@ function Login() {
           object-fit: cover;
         }
 
-        .left-panel h1 {
-          margin: 10px 0 6px;
-          font-size: 28px;
-        }
-
-        .left-panel p {
-          font-size: 15px;
-          opacity: 0.95;
-        }
-
-        /* RIGHT */
         .right-panel {
           width: 55%;
           padding: 40px;
@@ -217,7 +175,7 @@ function Login() {
           margin-bottom: 14px;
         }
 
-        .right-panel input {
+        input {
           width: 100%;
           padding: 12px 14px;
           border-radius: 8px;
@@ -225,7 +183,7 @@ function Login() {
           outline: none;
         }
 
-        .right-panel input.error {
+        input.error {
           border-color: #e74c3c;
           background: #fff6f6;
         }
@@ -237,19 +195,9 @@ function Login() {
           display: block;
         }
 
-        .forgot {
-          text-align: right;
-          margin-bottom: 16px;
-        }
-
-        .forgot a {
-          font-size: 13px;
-          color: #0b3e71;
-          text-decoration: none;
-        }
-
-        .right-panel button {
+        button {
           width: 100%;
+          margin-top: 18px;
           padding: 14px;
           border-radius: 10px;
           border: none;
@@ -260,18 +208,17 @@ function Login() {
           box-shadow: 0 10px 25px rgba(11,62,113,0.4);
         }
 
-        .right-panel p {
+        p {
           margin-top: 18px;
           text-align: center;
         }
 
-        .right-panel a {
+        a {
           color: #0b3e71;
           text-decoration: none;
           font-weight: 500;
         }
 
-        /* TOAST */
         .toast {
           position: fixed;
           bottom: 30px;
@@ -307,4 +254,4 @@ function Login() {
   );
 }
 
-export default Login;
+export default ResetPassword;

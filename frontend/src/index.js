@@ -3,9 +3,19 @@ import { createRoot } from "react-dom/client";
 import App from "./App";
 import axios from "axios";
 
+/* ================= AXIOS GLOBAL CONFIG ================= */
+
+// Backend base URL
 axios.defaults.baseURL = "http://localhost:5000";
 
+// ❌ REMOVE THIS LINE
+// axios.defaults.withCredentials = true;
 
 const container = document.getElementById("root");
 const root = createRoot(container);
-root.render(<App />);
+
+root.render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);

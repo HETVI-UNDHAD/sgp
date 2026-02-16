@@ -31,78 +31,176 @@ function GroupDetails() {
     fetchGroup();
   }, [groupId, navigate]);
 
-  if (loading) return <h3 style={styles.center}>Loading group...</h3>;
-  if (!group) return <h3 style={styles.center}>Group not found</h3>;
+  if (loading) return <h3 className="center">Loading group...</h3>;
+  if (!group) return <h3 className="center">Group not found</h3>;
+
+  const firstLetter = group.groupName?.charAt(0).toUpperCase();
 
   return (
-    <div style={styles.card}>
-      <h2>📌 Group: {group.groupName}</h2>
+    <>
+      <div className="details-wrapper">
 
-      <p>
-        <b>Admin:</b> {group.adminEmail}
-      </p>
+        {/* HEADER */}
+        <div className="details-header">
+          <div className="group-avatar">{firstLetter}</div>
+          <div>
+            <h2>{group.groupName}</h2>
+            <p>Manage your group information</p>
+          </div>
+        </div>
 
-      <p>
-        <b>Total Members:</b> {group.memberCount}
-      </p>
+        {/* CARD */}
+        <div className="details-card">
 
-      <button
-        onClick={() => setShowMembers(!showMembers)}
-        style={styles.button}
-      >
-        {showMembers ? "Hide Members" : "Show Members"}
-      </button>
+          <div className="info-section">
+            <p><strong>Admin:</strong> {group.adminEmail}</p>
+            <p><strong>Total Members:</strong> {group.memberCount}</p>
+          </div>
 
-      {showMembers && (
-        <ul style={styles.list}>
-          {group.memberEmails.length === 0 ? (
-            <li>No members yet</li>
-          ) : (
-            group.memberEmails.map((email, index) => (
-              <li key={index}>{email}</li>
-            ))
+          <button
+            onClick={() => setShowMembers(!showMembers)}
+            className="primary-btn"
+          >
+            {showMembers ? "Hide Members" : "Show Members"}
+          </button>
+
+          {showMembers && (
+            <div className="members-box">
+              {group.memberEmails.length === 0 ? (
+                <p>No members yet</p>
+              ) : (
+                <ul>
+                  {group.memberEmails.map((email, index) => (
+                    <li key={index}>{email}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
           )}
-        </ul>
-      )}
 
-      <button
-        style={{ ...styles.button, background: "#ddd", marginTop: "15px" }}
-        onClick={() => navigate("/dashboard")}
-      >
-        ⬅ Back to Dashboard
-      </button>
-    </div>
+          <button
+            className="secondary-btn"
+            onClick={() => navigate("/dashboard")}
+          >
+            ⬅ Back to Dashboard
+          </button>
+
+        </div>
+      </div>
+
+      {/* THEME CSS */}
+      <style>{`
+        * {
+          box-sizing: border-box;
+          font-family: "Poppins", sans-serif;
+        }
+
+        .details-wrapper {
+          min-height: 100vh;
+          background: #f4f8ff;
+          padding: 50px;
+        }
+
+        .details-header {
+          background: linear-gradient(135deg,#0b3e71,#1f5fa3);
+          color: white;
+          padding: 30px;
+          border-radius: 16px;
+          display: flex;
+          align-items: center;
+          gap: 20px;
+          margin-bottom: 40px;
+        }
+
+        .group-avatar {
+          width: 80px;
+          height: 80px;
+          border-radius: 50%;
+          background: white;
+          color: #0b3e71;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 32px;
+          font-weight: 600;
+        }
+
+        .details-card {
+          background: white;
+          padding: 30px;
+          border-radius: 16px;
+          box-shadow: 0 10px 25px rgba(0,0,0,0.05);
+          max-width: 600px;
+          margin: auto;
+          transition: 0.3s ease;
+        }
+
+        .details-card:hover {
+          box-shadow: 0 15px 35px rgba(0,0,0,0.1);
+        }
+
+        .info-section {
+          margin-bottom: 20px;
+          font-size: 15px;
+        }
+
+        .primary-btn {
+          background: #0b3e71;
+          color: white;
+          padding: 10px 18px;
+          border-radius: 8px;
+          border: none;
+          cursor: pointer;
+          margin-bottom: 15px;
+          transition: 0.3s;
+        }
+
+        .primary-btn:hover {
+          background: #145da0;
+        }
+
+        .secondary-btn {
+          background: #ddd;
+          color: #333;
+          padding: 10px 18px;
+          border-radius: 8px;
+          border: none;
+          cursor: pointer;
+          margin-top: 10px;
+        }
+
+        .members-box {
+          background: #f4f8ff;
+          padding: 15px;
+          border-radius: 10px;
+          margin-top: 10px;
+          max-height: 200px;
+          overflow-y: auto;
+        }
+
+        .members-box ul {
+          padding-left: 20px;
+        }
+
+        .members-box li {
+          margin-bottom: 6px;
+        }
+
+        .center {
+          text-align: center;
+          margin-top: 60px;
+        }
+
+        @media(max-width:768px){
+          .details-header{
+            flex-direction: column;
+            text-align: center;
+          }
+        }
+
+      `}</style>
+    </>
   );
 }
-
-/* ================= STYLES ================= */
-const styles = {
-  card: {
-    maxWidth: "500px",
-    margin: "40px auto",
-    padding: "25px",
-    borderRadius: "12px",
-    background: "#f9f9f9",
-    boxShadow: "0 6px 15px rgba(0,0,0,0.1)",
-  },
-  button: {
-    padding: "10px 16px",
-    marginTop: "12px",
-    cursor: "pointer",
-    borderRadius: "6px",
-    border: "none",
-    background: "#007bff",
-    color: "#fff",
-    fontSize: "14px",
-  },
-  list: {
-    marginTop: "15px",
-    paddingLeft: "20px",
-  },
-  center: {
-    textAlign: "center",
-    marginTop: "40px",
-  },
-};
 
 export default GroupDetails;

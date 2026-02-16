@@ -10,6 +10,9 @@ import AddMembers from "./AddMembers";
 import AcceptInvite from "./AcceptInvite";
 import GroupDetails from "./GroupDetails";
 import MyGroups from "./MyGroups";
+import ForgotPassword from "./ForgotPassword";
+import ResetPassword from "./ResetPassword"; 
+import Profile from "./Profile";
 
 function App() {
   return (
@@ -20,6 +23,8 @@ function App() {
         <Route path="/register" element={<Register />} />
         <Route path="/login" element={<Login />} />
         <Route path="/verify-otp" element={<VerifyOtp />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+         <Route path="/reset-password/:token" element={<ResetPassword />} />         
 
         {/* After login */}
         <Route path="/dashboard" element={<Dashboard />} />
@@ -27,6 +32,7 @@ function App() {
         <Route path="/add-members/:groupId" element={<AddMembers />} />
         <Route path="/group/:groupId" element={<GroupDetails />} />
         <Route path="/my-groups" element={<MyGroups />} />
+        <Route path="/profile" element={<Profile />} />
 
         {/* Invite */}
         <Route path="/accept-invite/:token" element={<AcceptInvite />} />

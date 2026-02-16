@@ -156,6 +156,7 @@ router.get("/accept/:token", async (req, res) => {
   }
 });
 
+
 /* ================= GET USER GROUPS ================= */
 // GET /api/group/user/:userId
 router.get("/user/:userId", async (req, res) => {
