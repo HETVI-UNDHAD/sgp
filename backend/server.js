@@ -4,8 +4,18 @@ require("dotenv").config();
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
+const http = require("http");
+const { Server } = require("socket.io");
+const path = require("path");
 
 const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: process.env.CLIENT_URL || "http://localhost:3000",
+    credentials: true
+  }
+});
 
 /* =====================================================
    MIDDLEWARE
@@ -23,6 +33,32 @@ app.use(
 // ✅ BODY PARSER
 app.use(express.json({ limit: "5mb" }));
 
+// ✅ SERVE UPLOADS
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
+/* =====================================================
+   SOCKET.IO
+===================================================== */
+io.on("connection", (socket) => {
+  console.log("User connected:", socket.id);
+
+  socket.on("joinGroup", (groupId) => {
+    socket.join(groupId);
+    console.log(`User ${socket.id} joined group ${groupId}`);
+  });
+
+  socket.on("fileUploaded", (data) => {
+    io.to(data.groupId).emit("newFile", data.file);
+  });
+
+  socket.on("disconnect", () => {
+    console.log("User disconnected:", socket.id);
+  });
+});
+
+// Make io accessible in routes
+app.set("io", io);
+
 /* =====================================================
    HEALTH CHECK ROUTE
 ===================================================== */
@@ -38,6 +74,7 @@ app.get("/", (req, res) => {
 ===================================================== */
 app.use("/api/auth", require("./routes/auth"));
 app.use("/api/group", require("./routes/group"));
+app.use("/api/files", require("./routes/fileRoutes"));
 
 /* =====================================================
    GLOBAL ERROR HANDLER
@@ -67,7 +104,7 @@ mongoose
 ===================================================== */
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
 

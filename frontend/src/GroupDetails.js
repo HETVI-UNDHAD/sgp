@@ -121,6 +121,14 @@ function GroupDetails() {
             {showMembers ? "Hide Members" : "Show Members"}
           </button>
 
+          <button
+            onClick={() => navigate(`/chat/${groupId}`)}
+            className="primary-btn"
+            style={{ marginLeft: "10px" }}
+          >
+            💬 Open Chat
+          </button>
+
           {/* MEMBER LIST */}
           {showMembers && (
             <div className="members-box">
