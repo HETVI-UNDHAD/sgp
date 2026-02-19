@@ -22,43 +22,40 @@ transporter.verify((err) => {
   else console.log("✅ EMAIL READY");
 });
 
-/* ================= CREATE GROUP ================= */
-// POST /api/group/create
+/* =====================================================
+   CREATE GROUP
+===================================================== */
 router.post("/create", async (req, res) => {
   try {
     const { groupName, adminId } = req.body;
 
-    if (!groupName || !adminId) {
+    if (!groupName || !adminId)
       return res.status(400).json({ msg: "groupName and adminId required" });
-    }
 
-    if (!mongoose.Types.ObjectId.isValid(adminId)) {
+    if (!mongoose.Types.ObjectId.isValid(adminId))
       return res.status(400).json({ msg: "Invalid adminId" });
-    }
 
     const admin = await User.findById(adminId);
-    if (!admin) {
-      return res.status(404).json({ msg: "Admin user not found" });
-    }
+    if (!admin) return res.status(404).json({ msg: "Admin not found" });
 
     const exists = await Group.findOne({
       name: groupName,
       admin: adminId,
     });
 
-    if (exists) {
-      return res.status(400).json({
-        msg: "You already created a group with this name",
-      });
-    }
+    if (exists)
+      return res
+        .status(400)
+        .json({ msg: "You already created group with this name" });
 
     const group = new Group({
       name: groupName,
-      admin: admin._id,          // ✅ ObjectId
-      members: [admin._id],      // ✅ admin is member
+      admin: admin._id,
+      members: [admin._id],
     });
 
     await group.save();
+
     res.status(201).json(group);
   } catch (err) {
     console.error("CREATE GROUP ERROR ❌", err);
@@ -66,32 +63,30 @@ router.post("/create", async (req, res) => {
   }
 });
 
-/* ================= SEND INVITE ================= */
-// POST /api/group/invite
+/* =====================================================
+   SEND INVITE
+===================================================== */
 router.post("/invite", async (req, res) => {
   try {
     const { email, groupId } = req.body;
 
-    if (!email || !groupId) {
+    if (!email || !groupId)
       return res.status(400).json({ msg: "Email and groupId required" });
-    }
 
-    const token = jwt.sign(
-      { email, groupId },
-      process.env.JWT_SECRET,
-      { expiresIn: "24h" }
-    );
+    const token = jwt.sign({ email, groupId }, process.env.JWT_SECRET, {
+      expiresIn: "24h",
+    });
 
     const link = `http://localhost:3000/accept-invite/${token}`;
 
     await transporter.sendMail({
-      from: `"Team Collaboration App" <${process.env.EMAIL_USER}>`,
+      from: `"Team App" <${process.env.EMAIL_USER}>`,
       to: email,
       subject: "Group Invitation",
       html: `
         <h3>You are invited to join a group</h3>
         <a href="${link}">Accept Invitation</a>
-        <p>Link valid for 24 hours</p>
+        <p>Valid for 24 hours</p>
       `,
     });
 
@@ -102,8 +97,9 @@ router.post("/invite", async (req, res) => {
   }
 });
 
-/* ================= ACCEPT INVITE ================= */
-// GET /api/group/accept/:token
+/* =====================================================
+   ACCEPT INVITE + AUTO LOGIN
+===================================================== */
 router.get("/accept/:token", async (req, res) => {
   try {
     const decoded = jwt.verify(req.params.token, process.env.JWT_SECRET);
@@ -111,7 +107,6 @@ router.get("/accept/:token", async (req, res) => {
 
     const user = await User.findOne({ email });
 
-    // 🟡 USER NOT REGISTERED → REGISTER FLOW
     if (!user) {
       return res.json({
         status: "NOT_REGISTERED",
@@ -121,22 +116,16 @@ router.get("/accept/:token", async (req, res) => {
     }
 
     const group = await Group.findById(groupId);
-    if (!group) {
-      return res.status(404).json({ msg: "Group not found" });
-    }
+    if (!group) return res.status(404).json({ msg: "Group not found" });
 
-    // add member only once
     if (!group.members.includes(user._id)) {
       group.members.push(user._id);
       await group.save();
     }
 
-    // 🔑 AUTO LOGIN TOKEN
-    const loginToken = jwt.sign(
-      { id: user._id },
-      process.env.JWT_SECRET,
-      { expiresIn: "7d" }
-    );
+    const loginToken = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
+      expiresIn: "7d",
+    });
 
     res.json({
       status: "ACCEPTED",
@@ -156,20 +145,17 @@ router.get("/accept/:token", async (req, res) => {
   }
 });
 
-
-/* ================= GET USER GROUPS ================= */
-// GET /api/group/user/:userId
+/* =====================================================
+   GET USER GROUPS
+===================================================== */
 router.get("/user/:userId", async (req, res) => {
   try {
     const { userId } = req.params;
 
-    if (!mongoose.Types.ObjectId.isValid(userId)) {
+    if (!mongoose.Types.ObjectId.isValid(userId))
       return res.status(400).json({ msg: "Invalid userId" });
-    }
 
-    const groups = await Group.find({
-      members: userId, // ✅ correct
-    })
+    const groups = await Group.find({ members: userId })
       .populate("admin", "email")
       .populate("members", "email");
 
@@ -177,8 +163,11 @@ router.get("/user/:userId", async (req, res) => {
       _id: g._id,
       name: g.name,
       memberCount: g.members.length,
-      memberEmails: g.members.map((m) => m.email),
       adminEmail: g.admin.email,
+      members: g.members.map((m) => ({
+        id: m._id,
+        email: m.email,
+      })),
     }));
 
     res.json(result);
@@ -188,33 +177,120 @@ router.get("/user/:userId", async (req, res) => {
   }
 });
 
-/* ================= GROUP DETAILS ================= */
-// GET /api/group/:groupId
+/* =====================================================
+   GROUP DETAILS
+===================================================== */
 router.get("/:groupId", async (req, res) => {
   try {
     const { groupId } = req.params;
 
-    if (!mongoose.Types.ObjectId.isValid(groupId)) {
+    if (!mongoose.Types.ObjectId.isValid(groupId))
       return res.status(400).json({ msg: "Invalid groupId" });
-    }
 
     const group = await Group.findById(groupId)
       .populate("admin", "email")
       .populate("members", "email");
 
-    if (!group) {
-      return res.status(404).json({ msg: "Group not found" });
-    }
+    if (!group) return res.status(404).json({ msg: "Group not found" });
 
     res.json({
       groupName: group.name,
       adminEmail: group.admin.email,
+      adminId: group.admin._id, // ⭐ important for frontend
       memberCount: group.members.length,
-      memberEmails: group.members.map((m) => m.email),
+      members: group.members.map((m) => ({
+        id: m._id,
+        email: m.email,
+      })),
       createdAt: group.createdAt,
     });
   } catch (err) {
     console.error("GROUP DETAILS ERROR ❌", err);
+    res.status(500).json({ msg: "Server error" });
+  }
+});
+
+/* =====================================================
+   REMOVE MEMBER (ADMIN ONLY)
+===================================================== */
+router.delete("/:groupId/remove/:memberId", async (req, res) => {
+  try {
+    const { groupId, memberId } = req.params;
+    const { adminId } = req.body;
+
+    if (
+      !mongoose.Types.ObjectId.isValid(groupId) ||
+      !mongoose.Types.ObjectId.isValid(memberId) ||
+      !mongoose.Types.ObjectId.isValid(adminId)
+    ) {
+      return res.status(400).json({ msg: "Invalid IDs" });
+    }
+
+    const group = await Group.findById(groupId);
+    if (!group) return res.status(404).json({ msg: "Group not found" });
+
+    if (group.admin.toString() !== adminId)
+      return res.status(403).json({ msg: "Only admin can remove members" });
+
+    if (memberId === adminId)
+      return res.status(400).json({ msg: "Admin cannot remove himself" });
+
+    if (!group.members.includes(memberId))
+      return res.status(404).json({ msg: "Member not in group" });
+
+    group.members = group.members.filter(
+      (id) => id.toString() !== memberId
+    );
+
+    await group.save();
+
+    res.json({ msg: "Member removed successfully" });
+  } catch (err) {
+    console.error("REMOVE MEMBER ERROR ❌", err);
+    res.status(500).json({ msg: "Server error" });
+  }
+});
+/* =====================================================
+   LEAVE GROUP (USER LEAVES HIMSELF)
+===================================================== */
+router.post("/:groupId/exit", async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    const { userId } = req.body;
+
+    // validate ids
+    if (
+      !mongoose.Types.ObjectId.isValid(groupId) ||
+      !mongoose.Types.ObjectId.isValid(userId)
+    ) {
+      return res.status(400).json({ msg: "Invalid IDs" });
+    }
+
+    const group = await Group.findById(groupId);
+    if (!group) return res.status(404).json({ msg: "Group not found" });
+
+    // ❌ admin cannot leave group
+    if (group.admin.toString() === userId) {
+      return res
+        .status(400)
+        .json({ msg: "Admin cannot leave group. Transfer admin first." });
+    }
+
+    // ❌ user not in group
+    if (!group.members.includes(userId)) {
+      return res.status(404).json({ msg: "User not in group" });
+    }
+
+    // ✅ remove user
+    group.members = group.members.filter(
+      (id) => id.toString() !== userId
+    );
+
+    await group.save();
+
+    res.json({ msg: "You left the group successfully" });
+  } catch (err) {
+    console.error("EXIT GROUP ERROR ❌", err);
     res.status(500).json({ msg: "Server error" });
   }
 });

@@ -33,6 +33,7 @@ function App() {
         <Route path="/group/:groupId" element={<GroupDetails />} />
         <Route path="/my-groups" element={<MyGroups />} />
         <Route path="/profile" element={<Profile />} />
+      <Route path="/group/:groupId/add-members" element={<AddMembers />} />
 
         {/* Invite */}
         <Route path="/accept-invite/:token" element={<AcceptInvite />} />
