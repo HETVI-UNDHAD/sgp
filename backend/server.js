@@ -51,6 +51,10 @@ io.on("connection", (socket) => {
     io.to(data.groupId).emit("newFile", data.file);
   });
 
+  socket.on("fileDeleted", (data) => {
+    io.to(data.groupId).emit("fileDeleted", data);
+  });
+
   socket.on("disconnect", () => {
     console.log("User disconnected:", socket.id);
   });

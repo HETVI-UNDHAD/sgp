@@ -38,7 +38,14 @@ function GroupChat() {
       setFiles(prev => [file, ...prev]);
     });
 
-    return () => socket.off("newFile");
+    socket.on("fileDeleted", (data) => {
+      setFiles(prev => prev.filter(f => f._id !== data.fileId));
+    });
+
+    return () => {
+      socket.off("newFile");
+      socket.off("fileDeleted");
+    };
   }, [groupId]);
 
   const handleFileUpload = async (e) => {
@@ -60,7 +67,6 @@ function GroupChat() {
     try {
       const res = await axios.post("http://localhost:5000/api/files/upload", formData);
       socket.emit("fileUploaded", { groupId, file: res.data.file });
-      setFiles(prev => [res.data.file, ...prev]);
       fileInputRef.current.value = "";
     } catch (err) {
       alert(err.response?.data?.msg || "Upload failed");
@@ -71,6 +77,20 @@ function GroupChat() {
 
   const handleDownload = (fileId, originalName) => {
     window.open(`http://localhost:5000/api/files/download/${fileId}`, "_blank");
+  };
+
+  const handleDelete = async (fileId) => {
+    if (!window.confirm("Delete this file?")) return;
+    
+    try {
+      await axios.delete(`http://localhost:5000/api/files/delete/${fileId}`, {
+        data: { userEmail }
+      });
+      setFiles(prev => prev.filter(f => f._id !== fileId));
+      socket.emit("fileDeleted", { groupId, fileId });
+    } catch (err) {
+      alert(err.response?.data?.msg || "Delete failed");
+    }
   };
 
   const isImage = (type) => type?.startsWith("image/");
@@ -115,6 +135,11 @@ function GroupChat() {
                   <button onClick={() => handleDownload(file._id, file.originalName)} className="download-btn">
                     ⬇ Download
                   </button>
+                  {file.uploadedByEmail === userEmail && (
+                    <button onClick={() => handleDelete(file._id)} className="delete-btn">
+                      🗑️ Delete
+                    </button>
+                  )}
                 </div>
               </div>
             ))
@@ -201,6 +226,15 @@ function GroupChat() {
         }
         .download-btn {
           background: #28a745;
+          color: white;
+          border: none;
+          padding: 8px 16px;
+          border-radius: 6px;
+          cursor: pointer;
+          margin-right: 8px;
+        }
+        .delete-btn {
+          background: #dc3545;
           color: white;
           border: none;
           padding: 8px 16px;

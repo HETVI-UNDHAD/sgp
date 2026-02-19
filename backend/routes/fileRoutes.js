@@ -101,4 +101,28 @@ router.get("/download/:id", async (req, res) => {
   }
 });
 
+/* ================= DELETE FILE ================= */
+router.delete("/delete/:id", async (req, res) => {
+  try {
+    const { userEmail } = req.body;
+    const file = await File.findById(req.params.id);
+    
+    if (!file) return res.status(404).json({ msg: "File not found" });
+    
+    // Only uploader or admin can delete
+    const group = await Group.findById(file.groupId).populate("admin", "email");
+    if (file.uploadedByEmail !== userEmail && group.admin.email !== userEmail) {
+      return res.status(403).json({ msg: "Not authorized to delete" });
+    }
+    
+    const filePath = path.join(__dirname, "..", "uploads", file.filename);
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    
+    await File.findByIdAndDelete(req.params.id);
+    res.json({ success: true, msg: "File deleted" });
+  } catch (err) {
+    res.status(500).json({ msg: "Delete failed" });
+  }
+});
+
 module.exports = router;
