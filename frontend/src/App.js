@@ -13,6 +13,7 @@ import MyGroups from "./MyGroups";
 import ForgotPassword from "./ForgotPassword";
 import ResetPassword from "./ResetPassword"; 
 import Profile from "./Profile";
+import GroupChat from "./GroupChat";
 
 function App() {
   return (
@@ -31,6 +32,7 @@ function App() {
         <Route path="/create-group" element={<CreateGroup />} />
         <Route path="/add-members/:groupId" element={<AddMembers />} />
         <Route path="/group/:groupId" element={<GroupDetails />} />
+        <Route path="/chat/:groupId" element={<GroupChat />} />
         <Route path="/my-groups" element={<MyGroups />} />
         <Route path="/profile" element={<Profile />} />
 
