@@ -171,11 +171,21 @@ function Dashboard() {
                     <h4>{g.name}</h4>
                     <p>Members: {g.memberCount}</p>
 
-                    <button
-                      onClick={() => navigate(`/group/${g._id}`)}
-                    >
-                      View Group
-                    </button>
+                    <div className="group-card-buttons">
+                      <button
+                        onClick={() => navigate(`/group/${g._id}`)}
+                        className="btn-secondary"
+                      >
+                        View Group
+                      </button>
+                      <button
+                        onClick={() => navigate(`/messages/${g._id}`)}
+                        className="btn-primary"
+                        title="Open chat"
+                      >
+                        💬 Chat
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -380,6 +390,41 @@ function Dashboard() {
           background: #0b3e71;
           color: white;
           cursor: pointer;
+        }
+
+        .group-card-buttons {
+          display: flex;
+          gap: 10px;
+          margin-top: 15px;
+        }
+
+        .group-card-buttons button {
+          flex: 1;
+          margin-top: 0;
+          padding: 10px 12px;
+          font-size: 14px;
+          font-weight: 500;
+          transition: all 0.3s ease;
+        }
+
+        .group-card-buttons .btn-primary {
+          background: linear-gradient(135deg, #34a853, #1f8e48);
+        }
+
+        .group-card-buttons .btn-primary:hover {
+          background: linear-gradient(135deg, #3da85f, #227d4f);
+          transform: translateY(-2px);
+          box-shadow: 0 4px 12px rgba(52, 168, 83, 0.3);
+        }
+
+        .group-card-buttons .btn-secondary {
+          background: #0b3e71;
+        }
+
+        .group-card-buttons .btn-secondary:hover {
+          background: #0a3060;
+          transform: translateY(-2px);
+          box-shadow: 0 4px 12px rgba(11, 62, 113, 0.3);
         }
 
         @media(max-width:900px){

@@ -42,19 +42,50 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 io.on("connection", (socket) => {
   console.log("User connected:", socket.id);
 
+  // ✅ JOIN GROUP ROOM
   socket.on("joinGroup", (groupId) => {
     socket.join(groupId);
+    socket.broadcast.to(groupId).emit("userJoined", { userId: socket.id });
     console.log(`User ${socket.id} joined group ${groupId}`);
   });
 
+  // ✅ SEND MESSAGE (Real-time)
+  socket.on("sendMessage", (messageData) => {
+    // Broadcast message to all users in the group
+    io.to(messageData.groupId).emit("receiveMessage", {
+      ...messageData,
+      timestamp: new Date(),
+    });
+    console.log(`Message sent in group ${messageData.groupId}:`, messageData.content);
+  });
+
+  // ✅ MARK MESSAGE AS DELIVERED
+  socket.on("messageDelivered", (data) => {
+    io.to(data.groupId).emit("updateMessageStatus", {
+      messageId: data.messageId,
+      status: "delivered",
+    });
+  });
+
+  // ✅ MARK MESSAGE AS READ
+  socket.on("messageRead", (data) => {
+    io.to(data.groupId).emit("updateMessageStatus", {
+      messageId: data.messageId,
+      status: "read",
+    });
+  });
+
+  // ✅ FILE UPLOAD
   socket.on("fileUploaded", (data) => {
     io.to(data.groupId).emit("newFile", data.file);
   });
 
+  // ✅ FILE DELETION
   socket.on("fileDeleted", (data) => {
     io.to(data.groupId).emit("fileDeleted", data);
   });
 
+  // ✅ USER DISCONNECT
   socket.on("disconnect", () => {
     console.log("User disconnected:", socket.id);
   });
@@ -73,12 +104,13 @@ app.get("/", (req, res) => {
   });
 });
 
-/* =====================================================
+/* =====================================================w
    ROUTES
 ===================================================== */
 app.use("/api/auth", require("./routes/auth"));
 app.use("/api/group", require("./routes/group"));
 app.use("/api/files", require("./routes/fileRoutes"));
+app.use("/api/messages", require("./routes/messageRoutes"));
 
 /* =====================================================
    GLOBAL ERROR HANDLER
