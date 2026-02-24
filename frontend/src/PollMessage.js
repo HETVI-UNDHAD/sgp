@@ -3,6 +3,11 @@ import React from "react";
 function PollMessage({ msg, isOwnMessage }) {
   const [userVotes, setUserVotes] = React.useState({});
 
+  // Safety check - if no poll data, return null
+  if (!msg.poll || !msg.poll.question || !msg.poll.options || msg.poll.options.length === 0) {
+    return null;
+  }
+
   const handleVote = (optionIndex) => {
     setUserVotes((prev) => {
       const newVotes = { ...prev };

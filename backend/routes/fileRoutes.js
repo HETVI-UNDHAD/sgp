@@ -20,12 +20,13 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit
   fileFilter: (req, file, cb) => {
-    const allowed = /jpeg|jpg|png|gif|pdf|doc|docx|txt|zip/;
+    // allow by extension OR by mimetype substring for common file types
+    const allowed = /jpeg|jpg|png|gif|pdf|doc|docx|txt|zip|xls|xlsx|ppt|pptx|mp4|mpeg|webm|bmp|svg/;
     const ext = allowed.test(path.extname(file.originalname).toLowerCase());
     const mime = allowed.test(file.mimetype);
-    if (ext && mime) cb(null, true);
+    if (ext || mime) cb(null, true);
     else cb(new Error("Invalid file type"));
   }
 });
@@ -33,8 +34,10 @@ const upload = multer({
 /* ================= UPLOAD FILE ================= */
 router.post("/upload", upload.single("file"), async (req, res) => {
   try {
-    const { groupId, userEmail, userName } = req.body;
-    
+    const groupId = req.body.groupId || req.body.group || req.query.groupId;
+    const userEmail = req.body.userEmail || req.body.email || req.body.senderEmail || req.body.uploadedByEmail;
+    const userName = req.body.userName || req.body.uploadedBy || req.body.senderName || req.body.name;
+
     if (!req.file) return res.status(400).json({ msg: "No file uploaded" });
     if (!groupId) return res.status(400).json({ msg: "Group ID required" });
 
@@ -44,15 +47,15 @@ router.post("/upload", upload.single("file"), async (req, res) => {
       .populate("members", "email");
       
     if (!group) {
-      if (req.file) fs.unlinkSync(req.file.path);
+      if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
       return res.status(404).json({ msg: "Group not found" });
     }
 
     const memberEmails = group.members.map(m => m.email);
     const adminEmail = group.admin.email;
-    
-    if (!memberEmails.includes(userEmail) && adminEmail !== userEmail) {
-      fs.unlinkSync(req.file.path);
+
+    if (!userEmail || (!memberEmails.includes(userEmail) && adminEmail !== userEmail)) {
+      if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
       return res.status(403).json({ msg: "Not authorized" });
     }
 
@@ -63,15 +66,16 @@ router.post("/upload", upload.single("file"), async (req, res) => {
       fileUrl: `/uploads/${req.file.filename}`,
       fileType: req.file.mimetype,
       fileSize: req.file.size,
-      uploadedBy: userName || userEmail,
+      uploadedBy: userName || userEmail || "Unknown",
       uploadedByEmail: userEmail
     });
 
     await newFile.save();
+    console.log("✅ File saved to DB:", newFile._id, newFile.originalName);
     res.json({ success: true, file: newFile });
   } catch (err) {
     console.error("Upload error:", err);
-    if (req.file) fs.unlinkSync(req.file.path);
+    if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
     res.status(500).json({ msg: "Upload failed", error: err.message });
   }
 });
@@ -80,8 +84,10 @@ router.post("/upload", upload.single("file"), async (req, res) => {
 router.get("/group/:groupId", async (req, res) => {
   try {
     const files = await File.find({ groupId: req.params.groupId }).sort({ createdAt: -1 });
+    console.log(`📂 Fetching files for group ${req.params.groupId}: Found ${files.length} files`);
     res.json(files);
   } catch (err) {
+    console.error("Error fetching files:", err);
     res.status(500).json({ msg: "Error fetching files" });
   }
 });
@@ -104,20 +110,20 @@ router.get("/download/:id", async (req, res) => {
 /* ================= DELETE FILE ================= */
 router.delete("/delete/:id", async (req, res) => {
   try {
-    const { userEmail } = req.body;
+    const userEmail = req.body.userEmail || req.body.email || req.body.senderEmail || req.body.uploadedByEmail;
     const file = await File.findById(req.params.id);
-    
+
     if (!file) return res.status(404).json({ msg: "File not found" });
-    
+
     // Only uploader or admin can delete
     const group = await Group.findById(file.groupId).populate("admin", "email");
     if (file.uploadedByEmail !== userEmail && group.admin.email !== userEmail) {
       return res.status(403).json({ msg: "Not authorized to delete" });
     }
-    
+
     const filePath = path.join(__dirname, "..", "uploads", file.filename);
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-    
+
     await File.findByIdAndDelete(req.params.id);
     res.json({ success: true, msg: "File deleted" });
   } catch (err) {

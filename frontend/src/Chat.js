@@ -13,12 +13,12 @@ function Chat() {
   const [group, setGroup] = useState(null);
   const [showMenu, setShowMenu] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [showPollForm, setShowPollForm] = useState(false);
-  const [pollQuestion, setPollQuestion] = useState("");
-  const [pollOptions, setPollOptions] = useState(["", ""]);
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
   const photoInputRef = useRef(null);
+
+  // base API url for direct links (used when the dev proxy isn't available)
+  const API_BASE = process.env.REACT_APP_API_URL || "http://localhost:5000";
 
   // Get current user
   const user = JSON.parse(localStorage.getItem("user") || "{}");
@@ -181,7 +181,7 @@ function Chat() {
     const formData = new FormData();
     formData.append("file", file);
     formData.append("groupId", groupId);
-    formData.append("email", userEmail);
+    formData.append("userEmail", userEmail);
 
     try {
       const res = await axios.post(
@@ -190,20 +190,25 @@ function Chat() {
       );
 
       // Send as message
-      const newMessage = {
+      const relUrl = res.data.file.fileUrl; // coming from backend
+      const messageData = {
         content: `📄 ${file.name}`,
-        fileUrl: res.data.file.fileUrl,
+        fileUrl: `${API_BASE}${relUrl}`,
         fileType: "document",
         sender: userId,
         senderName: userName,
         senderEmail: userEmail,
         groupId: groupId,
-        status: "sent",
-        timestamp: new Date(),
       };
 
-      setMessages((prev) => [...prev, newMessage]);
-      socket.emit("sendMessage", newMessage);
+      // Save message to database
+      const msgRes = await axios.post(
+        "http://localhost:5000/api/messages/send",
+        messageData
+      );
+
+      setMessages((prev) => [...prev, msgRes.data]);
+      socket.emit("sendMessage", msgRes.data);
       setShowMenu(false);
     } catch (err) {
       console.error("Error uploading document:", err);
@@ -228,7 +233,7 @@ function Chat() {
     const formData = new FormData();
     formData.append("file", file);
     formData.append("groupId", groupId);
-    formData.append("email", userEmail);
+    formData.append("userEmail", userEmail);
 
     try {
       const res = await axios.post(
@@ -240,20 +245,25 @@ function Chat() {
       const icon = isVideo ? "🎬" : "🖼️";
 
       // Send as message
-      const newMessage = {
+      const relUrl = res.data.file.fileUrl;
+      const messageData = {
         content: `${icon} ${file.name}`,
-        fileUrl: res.data.file.fileUrl,
+        fileUrl: `${API_BASE}${relUrl}`,
         fileType: isVideo ? "video" : "photo",
         sender: userId,
         senderName: userName,
         senderEmail: userEmail,
         groupId: groupId,
-        status: "sent",
-        timestamp: new Date(),
       };
 
-      setMessages((prev) => [...prev, newMessage]);
-      socket.emit("sendMessage", newMessage);
+      // Save message to database
+      const msgRes = await axios.post(
+        "http://localhost:5000/api/messages/send",
+        messageData
+      );
+
+      setMessages((prev) => [...prev, msgRes.data]);
+      socket.emit("sendMessage", msgRes.data);
       setShowMenu(false);
     } catch (err) {
       console.error("Error uploading photo/video:", err);
@@ -366,7 +376,7 @@ function Chat() {
             <p>📬 No messages yet. Start the conversation!</p>
           </div>
         ) : (
-          messages.map((msg) => {
+          messages.map((msg, index) => {
             const isOwnMessage = msg.sender === userId || msg.senderEmail === userEmail;
 
             // Trigger read status when viewing message
@@ -376,7 +386,7 @@ function Chat() {
 
             return (
               <div
-                key={msg._id}
+                key={msg._id || `msg-${index}`}
                 className={`message ${isOwnMessage ? "own-message" : "other-message"}`}
               >
                 {/* Sender Info (for other messages) */}
@@ -388,10 +398,8 @@ function Chat() {
 
                 {/* Message Bubble */}
                 <div className="message-bubble">
-                  {/* Poll Message */}
-                  {msg.poll ? (
-                    <PollMessage msg={msg} isOwnMessage={isOwnMessage} />
-                  ) : msg.fileType === "photo" || msg.fileType === "video" ? (
+                  {/* Photo or Video */}
+                  {(msg.fileType === "photo" || msg.fileType === "video") && msg.fileUrl ? (
                     <>
                       {msg.fileType === "photo" ? (
                         <img
@@ -408,17 +416,26 @@ function Chat() {
                       )}
                       <div className="message-content">{msg.content}</div>
                     </>
-                  ) : msg.fileType === "document" ? (
+                  ) : msg.fileType === "document" && msg.fileUrl ? (
+                    /* Document */
                     <a
                       href={msg.fileUrl}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="document-link"
+                      download
                     >
                       {msg.content}
                     </a>
-                  ) : (
+                  ) : msg.poll && msg.poll.question ? (
+                    /* Poll Message */
+                    <PollMessage msg={msg} isOwnMessage={isOwnMessage} />
+                  ) : msg.content ? (
+                    /* Regular Text Message */
                     <div className="message-content">{msg.content}</div>
+                  ) : (
+                    /* Fallback for empty messages */
+                    <div className="message-content" style={{opacity: 0.5}}>[Empty message]</div>
                   )}
 
                   {/* Timestamp + Status Ticks */}
@@ -486,14 +503,6 @@ function Chat() {
               >
                 🖼️ Photos & Videos
               </button>
-              <button
-                type="button"
-                className="menu-option"
-                onClick={handleCreatePoll}
-                disabled={uploading}
-              >
-                📊 Poll
-              </button>
             </div>
           )}
         </div>
@@ -509,81 +518,6 @@ function Chat() {
           {uploading ? "⏳" : "📤"}
         </button>
       </form>
-
-      {/* Poll Creation Form Modal */}
-      {showPollForm && (
-        <div className="poll-form-overlay">
-          <div className="poll-form-modal">
-            <h3>Create a Poll</h3>
-
-            <div className="form-group">
-              <label>Question:</label>
-              <input
-                type="text"
-                value={pollQuestion}
-                onChange={(e) => setPollQuestion(e.target.value)}
-                placeholder="Enter poll question..."
-                className="poll-input"
-              />
-            </div>
-
-            <div className="form-group">
-              <label>Options:</label>
-              {pollOptions.map((option, index) => (
-                <div key={index} className="option-input-group">
-                  <input
-                    type="text"
-                    value={option}
-                    onChange={(e) => handleOptionChange(index, e.target.value)}
-                    placeholder={`Option ${index + 1}`}
-                    className="poll-option-input"
-                  />
-                  {pollOptions.length > 2 && (
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveOption(index)}
-                      className="remove-option-btn"
-                    >
-                      ✕
-                    </button>
-                  )}
-                </div>
-              ))}
-
-              {pollOptions.length < 5 && (
-                <button
-                  type="button"
-                  onClick={handleAddOption}
-                  className="add-option-btn"
-                >
-                  + Add Option
-                </button>
-              )}
-            </div>
-
-            <div className="poll-form-buttons">
-              <button
-                type="button"
-                onClick={handleCreatePoll}
-                className="poll-submit-btn"
-              >
-                Create Poll
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowPollForm(false);
-                  setPollQuestion("");
-                  setPollOptions(["", ""]);
-                }}
-                className="poll-cancel-btn"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

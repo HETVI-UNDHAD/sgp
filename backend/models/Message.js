@@ -37,6 +37,22 @@ const messageSchema = new mongoose.Schema(
       type: Date,
       default: Date.now,
     },
+
+    // File attachments (optional)
+    fileUrl: String,
+    fileType: String, // "document", "photo", "video"
+
+    // Poll data (optional)
+    poll: {
+      question: String,
+      options: [
+        {
+          text: String,
+          votes: [String],
+          count: { type: Number, default: 0 }
+        }
+      ]
+    },
   },
   { timestamps: true }
 );

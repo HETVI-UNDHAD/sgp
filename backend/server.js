@@ -125,15 +125,19 @@ app.use((err, req, res, next) => {
 });
 
 /* =====================================================
-   DATABASE CONNECTION
+   DATABASE CONNECTION (OPTIONAL)
 ===================================================== */
-mongoose
-  .connect(process.env.MONGO_URI)
-  .then(() => console.log("✅ MongoDB Connected Successfully"))
-  .catch((err) => {
-    console.error("❌ MongoDB Connection Error:", err.message);
-    process.exit(1);
-  });
+if (process.env.MONGO_URI) {
+  mongoose
+    .connect(process.env.MONGO_URI)
+    .then(() => console.log("✅ MongoDB Connected Successfully"))
+    .catch((err) => {
+      console.warn("⚠️ MongoDB Connection Failed:", err.message);
+      console.log("📦 Running in IN-MEMORY mode (data will not persist)");
+    });
+} else {
+  console.log("📦 No MONGO_URI found - Running in IN-MEMORY mode");
+}
 
 /* =====================================================
    START SERVER

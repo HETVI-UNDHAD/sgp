@@ -21,7 +21,7 @@ router.get("/group/:groupId", async (req, res) => {
 // ✅ SAVE a new message
 router.post("/send", async (req, res) => {
   try {
-    const { content, sender, senderName, senderEmail, groupId } = req.body;
+    const { content, sender, senderName, senderEmail, groupId, fileUrl, fileType, poll } = req.body;
 
     if (!content || !sender || !groupId) {
       return res.status(400).json({ message: "Missing required fields" });
@@ -33,6 +33,9 @@ router.post("/send", async (req, res) => {
       senderName,
       senderEmail,
       groupId,
+      fileUrl,
+      fileType,
+      poll,
       status: "sent",
       timestamp: new Date(),
     });

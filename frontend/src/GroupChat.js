@@ -11,8 +11,11 @@ function GroupChat() {
   const fileInputRef = useRef(null);
 
   const [files, setFiles] = useState([]);
+  const [messages, setMessages] = useState([]);
+  const [newMessage, setNewMessage] = useState("");
   const [uploading, setUploading] = useState(false);
   const [group, setGroup] = useState(null);
+  const messagesEndRef = useRef(null);
   
   // Get user from localStorage
   const user = JSON.parse(localStorage.getItem("user") || "{}");
@@ -27,24 +30,41 @@ function GroupChat() {
 
     // Fetch existing files
     axios.get(`http://localhost:5000/api/files/group/${groupId}`)
-      .then(res => setFiles(res.data))
+      .then(res => {
+        console.log("✅ Files loaded:", res.data.length, "files");
+        console.log("Files data:", res.data);
+        setFiles(res.data);
+      })
       .catch(err => console.error("Files fetch error:", err));
+
+    // Fetch existing messages
+    axios.get(`http://localhost:5000/api/messages/group/${groupId}`)
+      .then(res => setMessages(res.data))
+      .catch(err => console.error("Messages fetch error:", err));
 
     // Join socket room
     socket.emit("joinGroup", groupId);
 
-    // Listen for new files
-    socket.on("newFile", (file) => {
-      setFiles(prev => [file, ...prev]);
+    // Listen for new files from other users
+    socket.on("newFile", async () => {
+      const filesRes = await axios.get(`http://localhost:5000/api/files/group/${groupId}`);
+      setFiles(filesRes.data);
     });
 
-    socket.on("fileDeleted", (data) => {
-      setFiles(prev => prev.filter(f => f._id !== data.fileId));
+    socket.on("fileDeleted", async () => {
+      const filesRes = await axios.get(`http://localhost:5000/api/files/group/${groupId}`);
+      setFiles(filesRes.data);
+    });
+
+    // Listen for new messages
+    socket.on("receiveMessage", (message) => {
+      setMessages(prev => [...prev, message]);
     });
 
     return () => {
       socket.off("newFile");
       socket.off("fileDeleted");
+      socket.off("receiveMessage");
     };
   }, [groupId]);
 
@@ -66,6 +86,11 @@ function GroupChat() {
 
     try {
       const res = await axios.post("http://localhost:5000/api/files/upload", formData);
+      console.log("✅ File uploaded:", res.data);
+      // Refresh files from database instead of using socket data
+      const filesRes = await axios.get(`http://localhost:5000/api/files/group/${groupId}`);
+      console.log("✅ Files after upload:", filesRes.data.length);
+      setFiles(filesRes.data);
       socket.emit("fileUploaded", { groupId, file: res.data.file });
       fileInputRef.current.value = "";
     } catch (err) {
@@ -76,7 +101,12 @@ function GroupChat() {
   };
 
   const handleDownload = (fileId, originalName) => {
-    window.open(`http://localhost:5000/api/files/download/${fileId}`, "_blank");
+    const link = document.createElement('a');
+    link.href = `http://localhost:5000/api/files/download/${fileId}`;
+    link.download = originalName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const handleDelete = async (fileId) => {
@@ -86,10 +116,32 @@ function GroupChat() {
       await axios.delete(`http://localhost:5000/api/files/delete/${fileId}`, {
         data: { userEmail }
       });
-      setFiles(prev => prev.filter(f => f._id !== fileId));
+      // Refresh files from database
+      const filesRes = await axios.get(`http://localhost:5000/api/files/group/${groupId}`);
+      setFiles(filesRes.data);
       socket.emit("fileDeleted", { groupId, fileId });
     } catch (err) {
       alert(err.response?.data?.msg || "Delete failed");
+    }
+  };
+
+  const sendMessage = async (e) => {
+    e.preventDefault();
+    if (!newMessage.trim()) return;
+
+    try {
+      const res = await axios.post("http://localhost:5000/api/messages/send", {
+        content: newMessage,
+        sender: user._id,
+        senderName: userName,
+        senderEmail: userEmail,
+        groupId
+      });
+      socket.emit("sendMessage", { ...res.data, groupId });
+      setNewMessage("");
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    } catch (err) {
+      alert("Failed to send message");
     }
   };
 
@@ -102,6 +154,27 @@ function GroupChat() {
           <h2>{group?.groupName || "Group Chat"}</h2>
           <button onClick={() => navigate("/dashboard")} className="back-btn">← Back</button>
         </div>
+
+        <div className="chat-messages">
+          {messages.map((msg, idx) => (
+            <div key={idx} className={`message ${msg.senderEmail === userEmail ? 'own' : 'other'}`}>
+              <strong>{msg.senderName || msg.senderEmail}</strong>
+              <p>{msg.content}</p>
+              <span className="time">{new Date(msg.timestamp || msg.createdAt).toLocaleTimeString()}</span>
+            </div>
+          ))}
+          <div ref={messagesEndRef} />
+        </div>
+
+        <form onSubmit={sendMessage} className="message-input">
+          <input
+            type="text"
+            value={newMessage}
+            onChange={(e) => setNewMessage(e.target.value)}
+            placeholder="Type a message..."
+          />
+          <button type="submit">Send</button>
+        </form>
 
         <div className="upload-section">
           <input
@@ -149,9 +222,10 @@ function GroupChat() {
 
       <style>{`
         .chat-wrapper {
-          min-height: 100vh;
+          display: flex;
+          flex-direction: column;
+          height: 100vh;
           background: #f4f8ff;
-          padding: 20px;
         }
         .chat-header {
           display: flex;
@@ -160,8 +234,6 @@ function GroupChat() {
           background: linear-gradient(135deg,#0b3e71,#1f5fa3);
           color: white;
           padding: 20px;
-          border-radius: 12px;
-          margin-bottom: 20px;
         }
         .back-btn {
           background: white;
@@ -169,6 +241,60 @@ function GroupChat() {
           border: none;
           padding: 8px 16px;
           border-radius: 6px;
+          cursor: pointer;
+        }
+        .chat-messages {
+          flex: 1;
+          overflow-y: auto;
+          padding: 20px;
+        }
+        .message {
+          margin-bottom: 15px;
+          padding: 10px;
+          border-radius: 8px;
+          max-width: 70%;
+        }
+        .message.own {
+          background: #0b3e71;
+          color: white;
+          margin-left: auto;
+          text-align: right;
+        }
+        .message.other {
+          background: white;
+          color: #333;
+        }
+        .message strong {
+          display: block;
+          font-size: 12px;
+          margin-bottom: 5px;
+        }
+        .message p {
+          margin: 5px 0;
+        }
+        .time {
+          font-size: 10px;
+          opacity: 0.7;
+        }
+        .message-input {
+          display: flex;
+          padding: 15px;
+          background: white;
+          border-top: 1px solid #ddd;
+        }
+        .message-input input {
+          flex: 1;
+          padding: 10px;
+          border: 1px solid #ddd;
+          border-radius: 20px;
+          margin-right: 10px;
+        }
+        .message-input button {
+          background: #0b3e71;
+          color: white;
+          border: none;
+          padding: 10px 20px;
+          border-radius: 20px;
           cursor: pointer;
         }
         .upload-section {
