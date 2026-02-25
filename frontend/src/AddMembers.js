@@ -79,10 +79,12 @@ function AddMembers() {
           {/* LEFT PANEL */}
           <div className="left-panel">
             <div className="brand-box">
-              <img src={squadUpLogo} alt="logo" />
-              <h2>SquadUp</h2>
-              <p>Level Up Your Squad 🚀</p>
-            </div>
+                <div className="logo-circle">
+                  <img src={squadUpLogo} alt="logo" />
+                </div>
+                <h1>SquadUp</h1>
+                <p>Level Up Your Squad ....😉</p>
+              </div>
           </div>
 
           {/* RIGHT PANEL */}
@@ -179,27 +181,32 @@ function AddMembers() {
           padding: 40px;
         }
 
-        .brand-box img {
-  width: 140px;
-  height: 140px;
-  border-radius: 50%;
-  object-fit: cover;
-  background: white;
-  padding: 15px;
-  box-shadow: 0 10px 25px rgba(0,0,0,0.25);
-  margin-bottom: 20px;
-}
+                  /* LOGO CIRCLE STYLE */
+          .logo-circle {
+            width: 180px;
+            height: 180px;
+            border-radius: 50%;
+            overflow: hidden;
+            box-shadow: 0 18px 35px rgba(0,0,0,0.35);
+            margin-bottom: 20px;
+          }
 
+          .logo-circle img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+          }
 
-        .brand-box h2 {
-          font-size: 32px;
-          margin-bottom: 10px;
-        }
+          /* LEFT PANEL TEXT */
+          .left-panel h1 {
+            margin: 10px 0 6px;
+            font-size: 28px;
+          }
 
-        .brand-box p {
-          opacity: 0.9;
-        }
-
+          .left-panel p {
+            font-size: 15px;
+            opacity: 0.95;
+          }
         /* RIGHT PANEL */
         .right-panel {
           width: 55%;
