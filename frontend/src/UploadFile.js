@@ -1,4 +1,5 @@
 import axios from "axios";
+import { API_URL } from "./config";
 
 function UploadFile() {
   const upload = async (e) => {
@@ -7,7 +8,7 @@ function UploadFile() {
     formData.append("file", file);
     formData.append("userEmail", "test@gmail.com");
 
-    await axios.post("http://localhost:5000/api/files/upload", formData);
+    await axios.post(`${API_URL}/api/files/upload`, formData);
     alert("File Uploaded");
   };
 

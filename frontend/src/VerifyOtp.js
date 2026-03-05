@@ -2,6 +2,7 @@
 import { useState } from "react";
 import axios from "axios";
 import { useLocation, useNavigate } from "react-router-dom";
+import { API_URL } from "./config";
 
 function maskEmail(email) {
   const [name, domain] = email.split("@");
@@ -36,7 +37,7 @@ function VerifyOtp() {
     try {
       setLoading(true);
 
-      await axios.post("http://localhost:5000/api/auth/verify-otp", {
+      await axios.post(`${API_URL}/api/auth/verify-otp`, {
         email,
         otp,
       });

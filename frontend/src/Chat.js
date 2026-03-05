@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import axios from "axios";
 import socket from "./socket";
 import PollMessage from "./PollMessage";
+import { API_URL } from "./config";
 import "./Chat.css";
 
 function Chat() {
@@ -17,34 +18,28 @@ function Chat() {
   const fileInputRef = useRef(null);
   const photoInputRef = useRef(null);
 
-  // base API url for direct links (used when the dev proxy isn't available)
-  const API_BASE = process.env.REACT_APP_API_URL || "http://localhost:5000";
+  const API_BASE = API_URL;
 
-  // Get current user
   const user = JSON.parse(localStorage.getItem("user") || "{}");
   const userId = user._id;
   const userName = user.fullName || user.email || "Guest";
   const userEmail = user.email || "";
 
-  // ✅ FETCH GROUP AND MESSAGES ON LOAD
   useEffect(() => {
     const fetchGroupAndMessages = async () => {
       try {
         setLoading(true);
 
-        // Fetch group details
         const groupRes = await axios.get(
-          `http://localhost:5000/api/group/${groupId}`
+          `${API_URL}/api/group/${groupId}`
         );
         setGroup(groupRes.data);
 
-        // Fetch message history
         const messagesRes = await axios.get(
-          `http://localhost:5000/api/messages/group/${groupId}`
+          `${API_URL}/api/messages/group/${groupId}`
         );
         setMessages(messagesRes.data);
 
-        // Join Socket.IO group room
         socket.emit("joinGroup", groupId);
       } catch (err) {
         console.error("Error fetching data:", err);
@@ -56,17 +51,14 @@ function Chat() {
     fetchGroupAndMessages();
   }, [groupId]);
 
-  // ✅ LISTEN FOR INCOMING MESSAGES
   useEffect(() => {
     const handleReceiveMessage = (messageData) => {
-      // Prevent duplicate messages - check if message already exists
       setMessages((prev) => {
         const messageExists = prev.some(msg => msg._id === messageData._id);
-        if (messageExists) return prev; // Don't add duplicate
+        if (messageExists) return prev;
         return [...prev, messageData];
       });
       
-      // Auto-mark as delivered
       setTimeout(() => {
         socket.emit("messageDelivered", {
           messageId: messageData._id,
@@ -94,18 +86,15 @@ function Chat() {
     };
   }, [groupId]);
 
-  // ✅ AUTO-SCROLL TO BOTTOM
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // ✅ SEND MESSAGE
   const handleSendMessage = async (e) => {
     e.preventDefault();
 
     if (!messageInput.trim()) return;
 
-    // Create message object
     const newMessage = {
       content: messageInput,
       sender: userId,
@@ -114,17 +103,15 @@ function Chat() {
       groupId: groupId,
       status: "sent",
       timestamp: new Date(),
-      _id: Date.now().toString(), // Temporary ID for UI
+      _id: Date.now().toString(),
     };
 
-    // Add to local state immediately (optimistic update)
     setMessages((prev) => [...prev, newMessage]);
     setMessageInput("");
 
     try {
-      // Save to database
       const res = await axios.post(
-        "http://localhost:5000/api/messages/send",
+        `${API_URL}/api/messages/send`,
         {
           content: messageInput,
           sender: userId,
@@ -134,17 +121,14 @@ function Chat() {
         }
       );
 
-      // Update message with actual DB ID and timestamp
       setMessages((prev) =>
         prev.map((msg) =>
           msg._id === newMessage._id ? res.data : msg
         )
       );
 
-      // Broadcast to other users
       socket.emit("sendMessage", res.data);
 
-      // Auto-mark as delivered after a short delay
       setTimeout(() => {
         socket.emit("messageDelivered", {
           messageId: res.data._id,
@@ -157,7 +141,6 @@ function Chat() {
     }
   };
 
-  // ✅ MARK MESSAGE AS READ WHEN VIEWING
   const handleMarkAsRead = (messageId, status) => {
     if (status !== "read") {
       socket.emit("messageRead", {
@@ -165,14 +148,12 @@ function Chat() {
         groupId,
       });
 
-      // Update DB
       axios.put(
-        `http://localhost:5000/api/messages/${messageId}/read`
+        `${API_URL}/api/messages/${messageId}/read`
       ).catch(err => console.error("Error marking as read:", err));
     }
   };
 
-  // ✅ HANDLE DOCUMENT UPLOAD
   const handleDocumentUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -185,12 +166,11 @@ function Chat() {
 
     try {
       const res = await axios.post(
-        "http://localhost:5000/api/files/upload",
+        `${API_URL}/api/files/upload`,
         formData
       );
 
-      // Send as message
-      const relUrl = res.data.file.fileUrl; // coming from backend
+      const relUrl = res.data.file.fileUrl;
       const messageData = {
         content: `📄 ${file.name}`,
         fileUrl: `${API_BASE}${relUrl}`,
@@ -201,9 +181,8 @@ function Chat() {
         groupId: groupId,
       };
 
-      // Save message to database
       const msgRes = await axios.post(
-        "http://localhost:5000/api/messages/send",
+        `${API_URL}/api/messages/send`,
         messageData
       );
 
@@ -219,7 +198,6 @@ function Chat() {
     }
   };
 
-  // ✅ HANDLE PHOTO/VIDEO UPLOAD
   const handlePhotoVideoUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -237,14 +215,13 @@ function Chat() {
 
     try {
       const res = await axios.post(
-        "http://localhost:5000/api/files/upload",
+        `${API_URL}/api/files/upload`,
         formData
       );
 
       const isVideo = file.type.startsWith("video/");
       const icon = isVideo ? "🎬" : "🖼️";
 
-      // Send as message
       const relUrl = res.data.file.fileUrl;
       const messageData = {
         content: `${icon} ${file.name}`,
@@ -256,9 +233,8 @@ function Chat() {
         groupId: groupId,
       };
 
-      // Save message to database
       const msgRes = await axios.post(
-        "http://localhost:5000/api/messages/send",
+        `${API_URL}/api/messages/send`,
         messageData
       );
 
@@ -274,68 +250,6 @@ function Chat() {
     }
   };
 
-  // ✅ HANDLE POLL CREATION
-  const handleCreatePoll = () => {
-    if (!pollQuestion.trim()) {
-      alert("Poll question is required");
-      return;
-    }
-
-    const validOptions = pollOptions.filter((opt) => opt.trim());
-    if (validOptions.length < 2) {
-      alert("Poll needs at least 2 options");
-      return;
-    }
-
-    const newMessage = {
-      content: `📊 Poll: ${pollQuestion}`,
-      poll: {
-        question: pollQuestion,
-        options: validOptions.map((text) => ({
-          text,
-          votes: [],
-          count: 0,
-        })),
-      },
-      sender: userId,
-      senderName: userName,
-      senderEmail: userEmail,
-      groupId: groupId,
-      status: "sent",
-      timestamp: new Date(),
-      _id: Date.now().toString(),
-    };
-
-    setMessages((prev) => [...prev, newMessage]);
-    socket.emit("sendMessage", newMessage);
-    setShowMenu(false);
-    setShowPollForm(false);
-    setPollQuestion("");
-    setPollOptions(["", ""]);
-  };
-
-  // ✅ ADD POLL OPTION
-  const handleAddOption = () => {
-    if (pollOptions.length < 5) {
-      setPollOptions([...pollOptions, ""]);
-    }
-  };
-
-  // ✅ UPDATE POLL OPTION
-  const handleOptionChange = (index, value) => {
-    const newOptions = [...pollOptions];
-    newOptions[index] = value;
-    setPollOptions(newOptions);
-  };
-
-  // ✅ REMOVE POLL OPTION
-  const handleRemoveOption = (index) => {
-    if (pollOptions.length > 2) {
-      setPollOptions(pollOptions.filter((_, i) => i !== index));
-    }
-  };
-
-  // ✅ STATUS INDICATOR COMPONENT
   const StatusTick = ({ status }) => {
     if (status === "sent") return <span className="tick single">✓</span>;
     if (status === "delivered") return <span className="tick double">✓✓</span>;
@@ -343,7 +257,6 @@ function Chat() {
     return null;
   };
 
-  // ✅ FORMAT TIME
   const formatTime = (timestamp) => {
     const date = new Date(timestamp);
     return date.toLocaleTimeString("en-US", {
@@ -359,7 +272,6 @@ function Chat() {
 
   return (
     <div className="chat-container">
-      {/* Chat Header */}
       <div className="chat-header">
         <div>
           <h2>{group?.name || "Group Chat"}</h2>
@@ -369,7 +281,6 @@ function Chat() {
         </div>
       </div>
 
-      {/* Messages Area */}
       <div className="messages-area">
         {messages.length === 0 ? (
           <div className="no-messages">
@@ -379,7 +290,6 @@ function Chat() {
           messages.map((msg, index) => {
             const isOwnMessage = msg.sender === userId || msg.senderEmail === userEmail;
 
-            // Trigger read status when viewing message
             if (!isOwnMessage && msg.status !== "read") {
               handleMarkAsRead(msg._id, msg.status);
             }
@@ -389,16 +299,13 @@ function Chat() {
                 key={msg._id || `msg-${index}`}
                 className={`message ${isOwnMessage ? "own-message" : "other-message"}`}
               >
-                {/* Sender Info (for other messages) */}
                 {!isOwnMessage && (
                   <div className="sender-info">
                     <span className="sender-name">{msg.senderName}</span>
                   </div>
                 )}
 
-                {/* Message Bubble */}
                 <div className="message-bubble">
-                  {/* Photo or Video */}
                   {(msg.fileType === "photo" || msg.fileType === "video") && msg.fileUrl ? (
                     <>
                       {msg.fileType === "photo" ? (
@@ -417,7 +324,6 @@ function Chat() {
                       <div className="message-content">{msg.content}</div>
                     </>
                   ) : msg.fileType === "document" && msg.fileUrl ? (
-                    /* Document */
                     <a
                       href={msg.fileUrl}
                       target="_blank"
@@ -428,17 +334,13 @@ function Chat() {
                       {msg.content}
                     </a>
                   ) : msg.poll && msg.poll.question ? (
-                    /* Poll Message */
                     <PollMessage msg={msg} isOwnMessage={isOwnMessage} />
                   ) : msg.content ? (
-                    /* Regular Text Message */
                     <div className="message-content">{msg.content}</div>
                   ) : (
-                    /* Fallback for empty messages */
                     <div className="message-content" style={{opacity: 0.5}}>[Empty message]</div>
                   )}
 
-                  {/* Timestamp + Status Ticks */}
                   <div className="message-footer">
                     <span className="timestamp">
                       {formatTime(msg.timestamp)}
@@ -455,10 +357,7 @@ function Chat() {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Message Input */}
       <form className="message-input-form" onSubmit={handleSendMessage}>
-        
-        {/* Hidden File Inputs */}
         <input
           ref={fileInputRef}
           type="file"
@@ -474,7 +373,6 @@ function Chat() {
           accept="image/*,video/*"
         />
 
-        {/* 3-Dot Menu */}
         <div className="menu-container">
           <button
             type="button"

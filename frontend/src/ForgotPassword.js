@@ -2,6 +2,7 @@ import { useState } from "react";
 import axios from "axios";
 import { Link } from "react-router-dom";
 import squadUpLogo from "./squaduplogo.png";
+import { API_URL } from "./config";
 
 function ForgotPassword() {
   const [email, setEmail] = useState("");
@@ -21,7 +22,7 @@ function ForgotPassword() {
 
     try {
       const res = await axios.post(
-        "http://localhost:5000/api/auth/forgot-password",
+        `${API_URL}/api/auth/forgot-password`,
         { email: email.trim().toLowerCase() }
       );
 

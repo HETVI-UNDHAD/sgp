@@ -111,6 +111,7 @@ app.use("/api/auth", require("./routes/auth"));
 app.use("/api/group", require("./routes/group"));
 app.use("/api/files", require("./routes/fileRoutes"));
 app.use("/api/messages", require("./routes/messageRoutes"));
+app.use("/api/call", require("./routes/videoCall"));
 
 /* =====================================================
    GLOBAL ERROR HANDLER

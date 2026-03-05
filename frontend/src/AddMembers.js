@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
 import squadUpLogo from "./squaduplogo.png";
+import { API_URL } from "./config";
 
 function AddMembers() {
   const { groupId } = useParams();
@@ -50,7 +51,7 @@ function AddMembers() {
       setLoading(true);
 
       for (let email of emails) {
-        await axios.post("http://localhost:5000/api/group/invite", {
+        await axios.post(`${API_URL}/api/group/invite`, {
           email,
           groupId,
         });

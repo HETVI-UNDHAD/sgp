@@ -2,6 +2,7 @@ import { useState } from "react";
 import axios from "axios";
 import { useNavigate, Link, useLocation } from "react-router-dom";
 import squadUpLogo from "./squaduplogo.png";
+import { API_URL } from "./config";
 
 function Register() {
   const navigate = useNavigate();
@@ -71,7 +72,7 @@ function Register() {
 
     try {
       const res = await axios.post(
-        "http://localhost:5000/api/auth/register",
+        `${API_URL}/api/auth/register`,
         payload
       );
 

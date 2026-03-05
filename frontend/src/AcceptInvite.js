@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
 import squadUpLogo from "./squaduplogo.png";
+import { API_URL } from "./config";
 
 function AcceptInvite() {
   const { token } = useParams();
@@ -14,7 +15,7 @@ function AcceptInvite() {
     const acceptInvite = async () => {
       try {
         const res = await axios.get(
-          `http://localhost:5000/api/group/accept/${token}`
+          `${API_URL}/api/group/accept/${token}`
         );
 
         if (res.data.status === "NOT_REGISTERED") {

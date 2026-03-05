@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
+import { API_URL } from "./config";
 
 function CreateGroup() {
   const [groupName, setGroupName] = useState("");
@@ -33,7 +34,7 @@ function CreateGroup() {
       setLoading(true);
 
       const res = await axios.post(
-        "http://localhost:5000/api/group/create",
+        `${API_URL}/api/group/create`,
         {
           groupName,
           description,

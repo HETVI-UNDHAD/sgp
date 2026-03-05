@@ -15,6 +15,7 @@ import ResetPassword from "./ResetPassword";
 import Profile from "./Profile";
 import GroupChat from "./GroupChat";
 import Chat from "./Chat";
+import VideoCall from "./VideoCall";
 
 function App() {
   return (
@@ -35,6 +36,7 @@ function App() {
         <Route path="/group/:groupId" element={<GroupDetails />} />
         <Route path="/chat/:groupId" element={<GroupChat />} />
         <Route path="/messages/:groupId" element={<Chat />} />
+        <Route path="/video-call/:groupId" element={<VideoCall />} />
         <Route path="/my-groups" element={<MyGroups />} />
         <Route path="/profile" element={<Profile />} />
         <Route path="/group/:groupId/add-members" element={<AddMembers />} />

@@ -1,18 +1,27 @@
-# Node
+# Dependencies
 node_modules/
+package-lock.json
 
-# Env
-*.env
+# Environment variables
+.env
+.env.local
+.env.production
 
-# Build
-dist/
+# Build files
 build/
+dist/
+
+# Uploads
+uploads/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
 
 # Logs
+*.log
 npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Editor
-.vscode/
-.DS_Store

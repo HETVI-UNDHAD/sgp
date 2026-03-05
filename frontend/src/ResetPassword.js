@@ -2,6 +2,7 @@ import { useState } from "react";
 import axios from "axios";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import squadUpLogo from "./squaduplogo.png";
+import { API_URL } from "./config";
 
 function ResetPassword() {
   const { token } = useParams();
@@ -32,7 +33,7 @@ function ResetPassword() {
 
     try {
       const res = await axios.post(
-        "http://localhost:5000/api/auth/reset-password",
+        `${API_URL}/api/auth/reset-password`,
         { token, password }
       );
 

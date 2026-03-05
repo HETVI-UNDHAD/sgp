@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import squadUpLogo from "./squaduplogo.png";
+import { API_URL } from "./config";
 
 function Dashboard() {
   const navigate = useNavigate();
@@ -28,7 +29,7 @@ function Dashboard() {
   const loadGroups = async (userId) => {
     try {
       const res = await axios.get(
-        `http://localhost:5000/api/group/user/${userId}`
+        `${API_URL}/api/group/user/${userId}`
       );
       setGroups(res.data);
     } catch (err) {

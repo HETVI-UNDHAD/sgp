@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
+import { API_URL } from "./config";
 
 function MyGroups() {
   const [groups, setGroups] = useState([]);
@@ -18,7 +19,7 @@ function MyGroups() {
     const fetchGroups = async () => {
       try {
         const res = await axios.get(
-          `http://localhost:5000/api/group/user/${user._id}`
+          `${API_URL}/api/group/user/${user._id}`
         );
         setGroups(res.data);
       } catch (err) {

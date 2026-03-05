@@ -1,56 +1,107 @@
-# MERN Register Example
+# SquadUp - Team Collaboration Platform
 
-This repository contains a minimal MERN stack register example.
+A full-stack MERN application for team collaboration with real-time chat, file sharing, and video calling.
 
-## Structure
+## Features
 
-- backend: Express + MongoDB API
-- frontend: React app (CRA-style)
+- 🔐 User Authentication (Register, Login, OTP Verification)
+- 👥 Group Management (Create, Join, Manage Members)
+- 💬 Real-time Chat with Socket.IO
+- 📁 File Sharing (Documents, Photos, Videos)
+- 📹 Video Call Integration with Email Invitations
+- 📧 Email Notifications
+- 🔔 Real-time Notifications
 
-## Quick start (local)
+## Tech Stack
 
-1. Start MongoDB (or use a hosted MongoDB URI).
+**Frontend:**
+- React.js
+- React Router
+- Socket.IO Client
+- Axios
 
-2. Backend:
+**Backend:**
+- Node.js
+- Express.js
+- MongoDB
+- Socket.IO
+- Nodemailer
 
+## Setup Instructions
+
+### Prerequisites
+- Node.js (v14+)
+- MongoDB Atlas account
+- Gmail account for email service
+
+### Backend Setup
+
+1. Navigate to backend folder:
 ```bash
 cd backend
-npm install
-# copy backend/.env.example to backend/.env and edit MONGO_URI
-node server.js
 ```
 
-3. Frontend (development):
-
+2. Install dependencies:
 ```bash
-cd frontend
 npm install
-# Optionally set REACT_APP_API_URL to point to backend, or leave empty for same origin
+```
+
+3. Create `.env` file:
+```env
+PORT=5001
+MONGO_URI=your_mongodb_connection_string
+JWT_SECRET=your_secret_key
+EMAIL_USER=your_gmail@gmail.com
+EMAIL_PASS=your_gmail_app_password
+```
+
+4. Start backend:
+```bash
 npm start
 ```
 
-By default the frontend will send requests to the value of `REACT_APP_API_URL` (if set) + `/api/register`,
-or to `/api/register` on the current origin when unset. See `frontend/.env.example`.
+### Frontend Setup
 
-## Common issue: "friend's laptop data not reaching my DB"
-
-- If your friend runs the frontend on their laptop, `http://localhost:5000` refers to their laptop, not your server.
-- To allow others to reach your backend, either deploy the backend to a public URL or run a tunnel (ngrok) and set `REACT_APP_API_URL` to the tunnel URL.
-
-Example using ngrok:
-
+1. Navigate to frontend folder:
 ```bash
-# on the machine running the backend
-ngrok http 5000
-# ngrok will give you a public URL like https://abcd.ngrok.io
-# set REACT_APP_API_URL=https://abcd.ngrok.io in friend's frontend .env
+cd frontend
 ```
 
-## Health check
+2. Install dependencies:
+```bash
+npm install
+```
 
-The backend exposes a simple health endpoint: `GET /api/ping` which returns `{ ok: true }` when reachable.
+3. Create `.env` file:
+```env
+REACT_APP_API_URL=http://localhost:5001
+```
 
-## Notes
+4. Start frontend:
+```bash
+npm start
+```
 
-- CORS is enabled in `backend/server.js`, so cross-origin requests are allowed when the backend is reachable.
-- Ensure the backend is running and `MONGO_URI` is correct (see `backend/.env.example`).
+## Usage
+
+1. Register a new account
+2. Verify email with OTP
+3. Create or join groups
+4. Start chatting and sharing files
+5. Initiate video calls with group members
+
+## Environment Variables
+
+### Backend (.env)
+- `PORT` - Server port (default: 5001)
+- `MONGO_URI` - MongoDB connection string
+- `JWT_SECRET` - Secret key for JWT tokens
+- `EMAIL_USER` - Gmail address for sending emails
+- `EMAIL_PASS` - Gmail app password
+
+### Frontend (.env)
+- `REACT_APP_API_URL` - Backend API URL
+
+## License
+
+MIT

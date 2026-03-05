@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
 import { useParams, useNavigate } from "react-router-dom";
+import { API_URL } from "./config";
 
 function GroupDetails() {
   const { groupId } = useParams();
@@ -16,7 +17,7 @@ function GroupDetails() {
   const fetchGroup = async () => {
     try {
       const res = await axios.get(
-        `http://localhost:5000/api/group/${groupId}`
+        `${API_URL}/api/group/${groupId}`
       );
 
       setGroup({
@@ -44,7 +45,7 @@ function GroupDetails() {
 
     try {
       await axios.delete(
-        `http://localhost:5000/api/group/${groupId}/remove/${memberId}`,
+        `${API_URL}/api/group/${groupId}/remove/${memberId}`,
         { data: { adminId: user._id } }
       );
 
@@ -62,7 +63,7 @@ function GroupDetails() {
 
     try {
       await axios.post(
-        `http://localhost:5000/api/group/${groupId}/exit`,
+        `${API_URL}/api/group/${groupId}/exit`,
         { userId: user._id }
       );
 
@@ -127,6 +128,14 @@ function GroupDetails() {
             style={{ marginLeft: "10px" }}
           >
             💬 Open Chat
+          </button>
+
+          <button
+            onClick={() => navigate(`/video-call/${groupId}`)}
+            className="primary-btn"
+            style={{ marginLeft: "10px", background: "#34a853" }}
+          >
+            📹 Video Call
           </button>
 
           {/* MEMBER LIST */}

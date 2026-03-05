@@ -1,5 +1,6 @@
 import React, { useRef } from "react";
 import axios from "axios";
+import { API_URL } from "./config";
 
 function PhotoVideoShare({ groupId, userEmail, onUpload, onUploading }) {
   const photoInputRef = useRef(null);
@@ -29,7 +30,7 @@ function PhotoVideoShare({ groupId, userEmail, onUpload, onUploading }) {
 
     try {
       const res = await axios.post(
-        "http://localhost:5000/api/files/upload",
+        `${API_URL}/api/files/upload`,
         formData,
         {
           headers: {

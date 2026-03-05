@@ -2,8 +2,9 @@ import { useEffect, useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
 import io from "socket.io-client";
+import { API_URL } from "./config";
 
-const socket = io("http://localhost:5000");
+const socket = io(API_URL);
 
 function GroupChat() {
   const { groupId } = useParams();
@@ -24,12 +25,12 @@ function GroupChat() {
 
   useEffect(() => {
     // Fetch group details
-    axios.get(`http://localhost:5000/api/group/${groupId}`)
+    axios.get(`${API_URL}/api/group/${groupId}`)
       .then(res => setGroup(res.data))
       .catch(err => console.error("Group fetch error:", err));
 
     // Fetch existing files
-    axios.get(`http://localhost:5000/api/files/group/${groupId}`)
+    axios.get(`${API_URL}/api/files/group/${groupId}`)
       .then(res => {
         console.log("✅ Files loaded:", res.data.length, "files");
         console.log("Files data:", res.data);
@@ -38,7 +39,7 @@ function GroupChat() {
       .catch(err => console.error("Files fetch error:", err));
 
     // Fetch existing messages
-    axios.get(`http://localhost:5000/api/messages/group/${groupId}`)
+    axios.get(`${API_URL}/api/messages/group/${groupId}`)
       .then(res => setMessages(res.data))
       .catch(err => console.error("Messages fetch error:", err));
 
@@ -47,12 +48,12 @@ function GroupChat() {
 
     // Listen for new files from other users
     socket.on("newFile", async () => {
-      const filesRes = await axios.get(`http://localhost:5000/api/files/group/${groupId}`);
+      const filesRes = await axios.get(`${API_URL}/api/files/group/${groupId}`);
       setFiles(filesRes.data);
     });
 
     socket.on("fileDeleted", async () => {
-      const filesRes = await axios.get(`http://localhost:5000/api/files/group/${groupId}`);
+      const filesRes = await axios.get(`${API_URL}/api/files/group/${groupId}`);
       setFiles(filesRes.data);
     });
 
@@ -85,10 +86,10 @@ function GroupChat() {
     formData.append("userName", userName);
 
     try {
-      const res = await axios.post("http://localhost:5000/api/files/upload", formData);
+      const res = await axios.post(`${API_URL}/api/files/upload`, formData);
       console.log("✅ File uploaded:", res.data);
       // Refresh files from database instead of using socket data
-      const filesRes = await axios.get(`http://localhost:5000/api/files/group/${groupId}`);
+      const filesRes = await axios.get(`${API_URL}/api/files/group/${groupId}`);
       console.log("✅ Files after upload:", filesRes.data.length);
       setFiles(filesRes.data);
       socket.emit("fileUploaded", { groupId, file: res.data.file });
@@ -102,7 +103,7 @@ function GroupChat() {
 
   const handleDownload = (fileId, originalName) => {
     const link = document.createElement('a');
-    link.href = `http://localhost:5000/api/files/download/${fileId}`;
+    link.href = `${API_URL}/api/files/download/${fileId}`;
     link.download = originalName;
     document.body.appendChild(link);
     link.click();
@@ -113,11 +114,11 @@ function GroupChat() {
     if (!window.confirm("Delete this file?")) return;
     
     try {
-      await axios.delete(`http://localhost:5000/api/files/delete/${fileId}`, {
+      await axios.delete(`${API_URL}/api/files/delete/${fileId}`, {
         data: { userEmail }
       });
       // Refresh files from database
-      const filesRes = await axios.get(`http://localhost:5000/api/files/group/${groupId}`);
+      const filesRes = await axios.get(`${API_URL}/api/files/group/${groupId}`);
       setFiles(filesRes.data);
       socket.emit("fileDeleted", { groupId, fileId });
     } catch (err) {
@@ -130,7 +131,7 @@ function GroupChat() {
     if (!newMessage.trim()) return;
 
     try {
-      const res = await axios.post("http://localhost:5000/api/messages/send", {
+      const res = await axios.post(`${API_URL}/api/messages/send`, {
         content: newMessage,
         sender: user._id,
         senderName: userName,
@@ -196,7 +197,7 @@ function GroupChat() {
             files.map(file => (
               <div key={file._id} className="file-card">
                 {isImage(file.fileType) ? (
-                  <img src={`http://localhost:5000${file.fileUrl}`} alt={file.originalName} className="file-preview" />
+                  <img src={`${API_URL}${file.fileUrl}`} alt={file.originalName} className="file-preview" />
                 ) : (
                   <div className="file-icon">📄</div>
                 )}

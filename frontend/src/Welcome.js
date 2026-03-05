@@ -23,7 +23,7 @@ function Welcome() {
   const fetchStats = async () => {
     try {
       const res = await axios.get(
-        "http://localhost:5000/api/auth/stats"
+        `${process.env.REACT_APP_API_URL || "http://localhost:5001"}/api/auth/stats`
       );
 
       console.log("API RESPONSE:", res.data); // 🔎 debug

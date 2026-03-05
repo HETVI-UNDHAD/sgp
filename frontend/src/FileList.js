@@ -1,16 +1,17 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
+import { API_URL } from "./config";
 
 function FileList() {
   const [files, setFiles] = useState([]);
 
   const loadFiles = async () => {
-    const res = await axios.get("http://localhost:5000/api/files");
+    const res = await axios.get(`${API_URL}/api/files`);
     setFiles(res.data);
   };
 
   const deleteFile = async (id) => {
-    await axios.delete(`http://localhost:5000/api/files/${id}`);
+    await axios.delete(`${API_URL}/api/files/${id}`);
     loadFiles();
   };
 
@@ -24,7 +25,7 @@ function FileList() {
       {files.map((f) => (
         <div key={f._id}>
           {f.originalName}
-          <a href={`http://localhost:5000/api/files/download/${f._id}`}>
+          <a href={`${API_URL}/api/files/download/${f._id}`}>
             <button>Download</button>
           </a>
           <button onClick={() => deleteFile(f._id)}>Delete</button>
