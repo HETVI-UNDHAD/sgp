@@ -52,11 +52,19 @@ router.post("/upload", upload.single("file"), async (req, res) => {
     }
 
     const memberEmails = group.members.map(m => m.email);
-    const adminEmail = group.admin.email;
+    const adminEmail = group.admin?.email;
 
-    if (!userEmail || (!memberEmails.includes(userEmail) && adminEmail !== userEmail)) {
-      if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
-      return res.status(403).json({ msg: "Not authorized" });
+    if (userEmail && (memberEmails.includes(userEmail) || adminEmail === userEmail)) {
+      // authorized
+    } else if (userEmail) {
+      // fallback: check by userId if email check fails
+      const memberIds = group.members.map(m => m._id?.toString());
+      const adminId = group.admin?._id?.toString();
+      const userId = req.body.userId || req.body.sender;
+      if (!userId || (!memberIds.includes(userId) && adminId !== userId)) {
+        if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+        return res.status(403).json({ msg: "Not authorized" });
+      }
     }
 
     const newFile = new File({
@@ -104,6 +112,37 @@ router.get("/download/:id", async (req, res) => {
     res.download(filePath, file.originalName);
   } catch (err) {
     res.status(500).json({ msg: "Download failed" });
+  }
+});
+
+/* ================= DOWNLOAD ALL FILES AS ZIP ================= */
+router.get("/download-all/:groupId", async (req, res) => {
+  try {
+    const archiver = require("archiver");
+    const files = await File.find({ groupId: req.params.groupId });
+    if (!files.length) return res.status(404).json({ msg: "No files found" });
+
+    // Get group name for zip filename
+    const group = await Group.findById(req.params.groupId);
+    const groupName = group ? group.name.replace(/[^a-zA-Z0-9_\-]/g, "_") : "group";
+
+    res.setHeader("Content-Type", "application/zip");
+    res.setHeader("Content-Disposition", `attachment; filename="${groupName}.zip"`);
+
+    const archive = archiver("zip", { zlib: { level: 6 } });
+    archive.pipe(res);
+
+    for (const file of files) {
+      const filePath = path.join(__dirname, "..", "uploads", file.filename);
+      if (fs.existsSync(filePath)) {
+        archive.file(filePath, { name: file.originalName });
+      }
+    }
+
+    await archive.finalize();
+  } catch (err) {
+    console.error("ZIP error:", err);
+    res.status(500).json({ msg: "ZIP download failed" });
   }
 });
 

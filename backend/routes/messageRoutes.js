@@ -2,6 +2,26 @@ const express = require("express");
 const router = express.Router();
 const Message = require("../models/Message");
 
+// ✅ GET unread counts for multiple groups (pass groupIds as comma-separated query param)
+router.get("/unread", async (req, res) => {
+  try {
+    const { groupIds, userEmail } = req.query;
+    if (!groupIds || !userEmail) return res.json({});
+    const ids = groupIds.split(",");
+    const counts = {};
+    await Promise.all(ids.map(async (gid) => {
+      counts[gid] = await Message.countDocuments({
+        groupId: gid,
+        senderEmail: { $ne: userEmail },
+        status: { $ne: "read" },
+      });
+    }));
+    res.json(counts);
+  } catch (err) {
+    res.status(500).json({});
+  }
+});
+
 // ✅ GET all messages for a group
 router.get("/group/:groupId", async (req, res) => {
   try {
@@ -21,27 +41,33 @@ router.get("/group/:groupId", async (req, res) => {
 // ✅ SAVE a new message
 router.post("/send", async (req, res) => {
   try {
-    const { content, sender, senderName, senderEmail, groupId, fileUrl, fileType, poll } = req.body;
+    const { content, sender, senderName, senderEmail, groupId, fileUrl, fileType, poll, isSystem } = req.body;
 
-    if (!content || !sender || !groupId) {
+    if (!content || !groupId) {
+      return res.status(400).json({ message: "Missing required fields" });
+    }
+
+    // System messages don't need a sender
+    if (!isSystem && !sender) {
       return res.status(400).json({ message: "Missing required fields" });
     }
 
     const newMessage = new Message({
       content,
-      sender,
+      sender: isSystem ? undefined : sender,
       senderName,
       senderEmail,
       groupId,
       fileUrl,
       fileType,
       poll,
+      isSystem: !!isSystem,
       status: "sent",
       timestamp: new Date(),
     });
 
     const savedMessage = await newMessage.save();
-    const populatedMessage = await savedMessage.populate("sender", "fullName email");
+    const populatedMessage = isSystem ? savedMessage : await savedMessage.populate("sender", "fullName email");
 
     res.status(201).json(populatedMessage);
   } catch (err) {

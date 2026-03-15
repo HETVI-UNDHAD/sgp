@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
 import socket from "./socket";
@@ -7,325 +7,223 @@ import { API_URL } from "./config";
 function VideoCall() {
   const { groupId } = useParams();
   const navigate = useNavigate();
-  const [meetingCode, setMeetingCode] = useState("");
   const [meetingLink, setMeetingLink] = useState("");
+  const [roomName, setRoomName] = useState("");
   const [callActive, setCallActive] = useState(false);
-  const [participants, setParticipants] = useState([]);
   const [group, setGroup] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const jitsiRef = useRef(null);
+  const apiRef = useRef(null);
 
   const user = JSON.parse(localStorage.getItem("user") || "{}");
 
   useEffect(() => {
-    // Fetch group details
-    axios.get(`${API_URL}/api/group/${groupId}`)
-      .then(res => setGroup(res.data))
-      .catch(err => console.error(err));
+    axios.get(`${API_URL}/api/group/${groupId}`).then(res => setGroup(res.data)).catch(console.error);
 
-    // Listen for call notifications
     socket.on("callStarted", (data) => {
       if (data.groupId === groupId && data.initiatorEmail !== user.email) {
-        const join = window.confirm(`${data.initiatorName} started a video call!\n\nMeeting Code: ${data.meetingCode}\n\nClick OK to join now`);
-        if (join) {
+        if (window.confirm(`📹 ${data.initiatorName} started a video call!\n\nClick OK to join now.`))
           window.open(data.meetingLink, "_blank");
-        }
       }
     });
 
-    socket.on("callEnded", (data) => {
-      if (data.meetingCode === meetingCode) {
-        alert("Call has ended");
-        setCallActive(false);
-        setMeetingCode("");
-      }
-    });
+    socket.on("callEnded", () => { setCallActive(false); setRoomName(""); setMeetingLink(""); });
 
-    return () => {
-      socket.off("callStarted");
-      socket.off("callEnded");
-    };
-  }, [groupId, meetingCode, user.email]);
+    return () => { socket.off("callStarted"); socket.off("callEnded"); };
+  }, [groupId, user.email]);
 
-  const startCall = async () => {
-    try {
-      const res = await axios.post(`${API_URL}/api/call/start`, {
-        groupId,
-        initiatorEmail: user.email,
-        initiatorName: user.fullName || user.email
+  // Load Jitsi iframe API script once
+  useEffect(() => {
+    if (document.getElementById("jitsi-script")) return;
+    const script = document.createElement("script");
+    script.id = "jitsi-script";
+    script.src = "https://meet.jit.si/external_api.js";
+    script.async = true;
+    document.body.appendChild(script);
+  }, []);
+
+  // Launch Jitsi when callActive becomes true
+  useEffect(() => {
+    if (!callActive || !roomName || !jitsiRef.current) return;
+
+    const tryInit = () => {
+      if (!window.JitsiMeetExternalAPI) { setTimeout(tryInit, 300); return; }
+
+      if (apiRef.current) { apiRef.current.dispose(); apiRef.current = null; }
+
+      apiRef.current = new window.JitsiMeetExternalAPI("meet.jit.si", {
+        roomName,
+        parentNode: jitsiRef.current,
+        width: "100%",
+        height: "100%",
+        userInfo: { displayName: user.fullName || user.email, email: user.email },
+        configOverwrite: { startWithAudioMuted: false, startWithVideoMuted: false, prejoinPageEnabled: false },
+        interfaceConfigOverwrite: { SHOW_JITSI_WATERMARK: false, SHOW_WATERMARK_FOR_GUESTS: false, TOOLBAR_BUTTONS: ["microphone","camera","hangup","chat","tileview","fullscreen","settings"] },
       });
 
-      setMeetingCode(res.data.meetingCode);
+      apiRef.current.addEventListener("readyToClose", () => {
+        endCall();
+      });
+    };
+
+    tryInit();
+
+    return () => { if (apiRef.current) { apiRef.current.dispose(); apiRef.current = null; } };
+  }, [callActive, roomName]);
+
+  const startCall = async () => {
+    setLoading(true);
+    try {
+      const res = await axios.post(`${API_URL}/api/call/start`, {
+        groupId, initiatorEmail: user.email, initiatorName: user.fullName || user.email,
+      });
+      setRoomName(res.data.meetingCode);
       setMeetingLink(res.data.meetingLink);
       setCallActive(true);
-      setParticipants([user.email]);
-      
-      alert("Meeting invitations sent to all group members via email!");
-    } catch (err) {
-      alert("Failed to start call");
-    }
+    } catch { alert("Failed to start call"); }
+    finally { setLoading(false); }
   };
 
   const endCall = async () => {
     try {
-      await axios.post(`${API_URL}/api/call/end`, {
-        meetingCode,
-        groupId
-      });
-
-      setCallActive(false);
-      setMeetingCode("");
-      setMeetingLink("");
-      setParticipants([]);
-    } catch (err) {
-      alert("Failed to end call");
-    }
+      if (apiRef.current) { apiRef.current.dispose(); apiRef.current = null; }
+      await axios.post(`${API_URL}/api/call/end`, { meetingCode: roomName, groupId });
+    } catch {}
+    setCallActive(false); setRoomName(""); setMeetingLink("");
   };
 
-  const copyCode = () => {
-    navigator.clipboard.writeText(meetingCode);
-    alert("Meeting code copied!");
+  const copyLink = () => {
+    navigator.clipboard.writeText(meetingLink);
+    setCopied(true); setTimeout(() => setCopied(false), 2000);
   };
 
   return (
     <>
-      <div className="video-call-wrapper">
-        <div className="video-call-card">
-          <h2>Video Call - {group?.name || "Group"}</h2>
+      <div className="vc-page">
+        {/* Animated background */}
+        <div className="vc-bg c1"/><div className="vc-bg c2"/><div className="vc-bg c3"/>
 
-          {!callActive ? (
-            <div className="start-section">
-              <p>Start a video call with your group members</p>
-              <button onClick={startCall} className="start-btn">
-                📹 Start Video Call
-              </button>
-              <button onClick={() => navigate(`/group/${groupId}`)} className="back-btn">
-                ← Back to Group
-              </button>
-            </div>
-          ) : (
-            <div className="active-call">
-              <div className="meeting-info">
-                <h3>Meeting Code</h3>
-                <div className="code-display">
-                  <span className="code">{meetingCode}</span>
-                  <button onClick={copyCode} className="copy-btn">📋 Copy</button>
+        {!callActive ? (
+          /* ── PRE-CALL CARD ── */
+          <div className="vc-card">
+            <div className="vc-header">
+              <button className="vc-back" onClick={() => navigate(`/group/${groupId}`)}>← Back</button>
+              <div className="vc-title-row">
+                <span>📹</span>
+                <div>
+                  <h2>{group?.groupName || "Group"}</h2>
+                  <p>{group?.memberCount || 0} members</p>
                 </div>
-                <p className="instruction">Share this code with group members to join</p>
-              </div>
-
-              <div className="call-actions">
-                <a 
-                  href={meetingLink}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="join-btn"
-                >
-                  🎥 Join Meeting
-                </a>
-                <button onClick={endCall} className="end-btn">
-                  ❌ End Call
-                </button>
-              </div>
-
-              <div className="email-notice">
-                <p>✅ Email invitations sent to all group members</p>
-              </div>
-
-              <div className="participants">
-                <h4>Participants ({participants.length})</h4>
-                <ul>
-                  {participants.map((email, idx) => (
-                    <li key={idx}>{email}</li>
-                  ))}
-                </ul>
               </div>
             </div>
-          )}
-        </div>
+
+            <div className="vc-start">
+              <div className="vc-anim">
+                <div className="pr"/><div className="pr d1"/><div className="pr d2"/>
+                <span className="vc-emoji">🎥</span>
+              </div>
+              <h3>Start a Video Meeting</h3>
+              <p>Powered by <strong>Jitsi Meet</strong> — free, no account needed.<br/>Email invites sent to all members automatically.</p>
+              <button className="vc-btn-start" onClick={startCall} disabled={loading}>
+                {loading ? <span className="spin"/> : "📹 Create & Join Meeting"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          /* ── ACTIVE CALL FULL SCREEN ── */
+          <div className="vc-fullscreen">
+            {/* Top bar */}
+            <div className="vc-topbar">
+              <div className="vc-topbar-left">
+                <span className="live-dot">🔴</span>
+                <span className="live-label">LIVE</span>
+                <span className="vc-room-name">{group?.groupName || "Meeting"}</span>
+              </div>
+              <div className="vc-topbar-right">
+                <button className="copy-link-btn" onClick={copyLink}>
+                  {copied ? "✅ Copied!" : "🔗 Copy Link"}
+                </button>
+                <a href={meetingLink} target="_blank" rel="noopener noreferrer" className="open-tab-btn">
+                  ↗ Open in Tab
+                </a>
+                <button className="end-btn" onClick={endCall}>📵 End Call</button>
+              </div>
+            </div>
+
+            {/* Jitsi iframe container */}
+            <div className="jitsi-container" ref={jitsiRef} />
+          </div>
+        )}
       </div>
 
       <style>{`
-        * {
-          box-sizing: border-box;
-          font-family: "Poppins", sans-serif;
+        *{box-sizing:border-box;margin:0;padding:0;font-family:'Poppins',sans-serif}
+
+        .vc-page{
+          min-height:100vh;
+          background:linear-gradient(135deg,#0b3e71,#1565c0,#0d47a1);
+          display:flex;align-items:center;justify-content:center;
+          padding:20px;position:relative;overflow:hidden;
         }
 
-        .video-call-wrapper {
-          min-height: 100vh;
-          background: linear-gradient(135deg, #0b3e71, #1f5fa3);
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          padding: 20px;
-        }
+        /* BG blobs */
+        .vc-bg{position:absolute;border-radius:50%;filter:blur(70px);opacity:.2;animation:blob 9s ease-in-out infinite;pointer-events:none}
+        .c1{width:420px;height:420px;background:#4fc3f7;top:-100px;left:-100px}
+        .c2{width:320px;height:320px;background:#26a69a;bottom:-80px;right:-80px;animation-delay:3s}
+        .c3{width:260px;height:260px;background:#7e57c2;top:40%;left:55%;animation-delay:6s}
+        @keyframes blob{0%,100%{transform:translate(0,0)}40%{transform:translate(24px,-24px)}70%{transform:translate(-14px,14px)}}
 
-        .video-call-card {
-          background: white;
-          padding: 40px;
-          border-radius: 20px;
-          max-width: 600px;
-          width: 100%;
-          box-shadow: 0 20px 60px rgba(0,0,0,0.2);
-        }
+        /* PRE-CALL CARD */
+        .vc-card{background:#fff;border-radius:24px;width:100%;max-width:480px;box-shadow:0 32px 80px rgba(0,0,0,.28);overflow:hidden;position:relative;z-index:1;animation:cardIn .5s cubic-bezier(.34,1.56,.64,1)}
+        @keyframes cardIn{from{opacity:0;transform:translateY(48px) scale(.93)}to{opacity:1;transform:translateY(0) scale(1)}}
 
-        h2 {
-          color: #0b3e71;
-          margin-bottom: 30px;
-          text-align: center;
-        }
+        .vc-header{background:linear-gradient(135deg,#0b3e71,#1565c0);padding:18px 22px;display:flex;align-items:center;gap:14px}
+        .vc-back{background:rgba(255,255,255,.15);border:none;color:#fff;padding:7px 14px;border-radius:8px;cursor:pointer;font-size:13px;transition:.2s;white-space:nowrap}
+        .vc-back:hover{background:rgba(255,255,255,.28)}
+        .vc-title-row{display:flex;align-items:center;gap:10px;color:#fff;font-size:26px}
+        .vc-title-row div h2{font-size:17px;font-weight:700;margin:0}
+        .vc-title-row div p{font-size:12px;opacity:.8;margin:2px 0 0}
 
-        .start-section {
-          text-align: center;
-        }
+        .vc-start{padding:44px 32px;text-align:center;animation:fadeUp .4s ease}
+        @keyframes fadeUp{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
+        .vc-anim{position:relative;width:110px;height:110px;margin:0 auto 28px;display:flex;align-items:center;justify-content:center}
+        .pr{position:absolute;width:100%;height:100%;border-radius:50%;border:3px solid rgba(11,62,113,.18);animation:pulse 2.4s ease-out infinite}
+        .d1{animation-delay:.8s}.d2{animation-delay:1.6s}
+        @keyframes pulse{0%{transform:scale(.55);opacity:1}100%{transform:scale(1.45);opacity:0}}
+        .vc-emoji{font-size:50px;position:relative;z-index:1}
+        .vc-start h3{font-size:21px;color:#0b3e71;margin-bottom:10px;font-weight:700}
+        .vc-start p{color:#666;font-size:14px;line-height:1.7;margin-bottom:28px}
+        .vc-btn-start{background:linear-gradient(135deg,#0b3e71,#1565c0);color:#fff;border:none;padding:15px 44px;border-radius:50px;font-size:16px;font-weight:600;cursor:pointer;box-shadow:0 8px 24px rgba(11,62,113,.35);transition:.25s;display:inline-flex;align-items:center;gap:8px;min-width:220px;justify-content:center}
+        .vc-btn-start:hover:not(:disabled){transform:translateY(-3px);box-shadow:0 14px 32px rgba(11,62,113,.45)}
+        .vc-btn-start:disabled{opacity:.65;cursor:not-allowed}
+        .spin{width:20px;height:20px;border:3px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite;display:inline-block}
+        @keyframes spin{to{transform:rotate(360deg)}}
 
-        .start-section p {
-          margin-bottom: 20px;
-          color: #666;
-        }
+        /* ACTIVE CALL FULLSCREEN */
+        .vc-fullscreen{position:fixed;inset:0;display:flex;flex-direction:column;background:#1a1a2e;z-index:999;animation:fadeUp .3s ease}
 
-        .start-btn {
-          background: #0b3e71;
-          color: white;
-          border: none;
-          padding: 15px 30px;
-          border-radius: 10px;
-          font-size: 16px;
-          cursor: pointer;
-          margin-bottom: 15px;
-          width: 100%;
-        }
+        .vc-topbar{display:flex;justify-content:space-between;align-items:center;padding:10px 20px;background:linear-gradient(90deg,#0b3e71,#1565c0);flex-shrink:0;gap:12px;flex-wrap:wrap}
+        .vc-topbar-left{display:flex;align-items:center;gap:10px}
+        .live-dot{font-size:14px;animation:livePulse 1.5s ease-in-out infinite}
+        @keyframes livePulse{0%,100%{opacity:1}50%{opacity:.4}}
+        .live-label{background:#e53935;color:#fff;font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;letter-spacing:1px}
+        .vc-room-name{color:#fff;font-size:14px;font-weight:600;opacity:.9}
+        .vc-topbar-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+        .copy-link-btn{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;padding:7px 14px;border-radius:8px;cursor:pointer;font-size:13px;transition:.2s;white-space:nowrap}
+        .copy-link-btn:hover{background:rgba(255,255,255,.25)}
+        .open-tab-btn{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;padding:7px 14px;border-radius:8px;cursor:pointer;font-size:13px;text-decoration:none;transition:.2s;white-space:nowrap}
+        .open-tab-btn:hover{background:rgba(255,255,255,.25)}
+        .end-btn{background:linear-gradient(135deg,#c62828,#e53935);border:none;color:#fff;padding:8px 18px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;transition:.2s;white-space:nowrap;box-shadow:0 4px 12px rgba(198,40,40,.4)}
+        .end-btn:hover{transform:translateY(-1px);box-shadow:0 6px 18px rgba(198,40,40,.5)}
 
-        .start-btn:hover {
-          background: #145da0;
-        }
+        .jitsi-container{flex:1;width:100%;min-height:0}
+        .jitsi-container iframe{width:100%;height:100%;border:none}
 
-        .back-btn {
-          background: #f0f0f0;
-          color: #333;
-          border: none;
-          padding: 12px 25px;
-          border-radius: 10px;
-          cursor: pointer;
-          width: 100%;
-        }
-
-        .active-call {
-          text-align: center;
-        }
-
-        .meeting-info {
-          background: #f4f8ff;
-          padding: 25px;
-          border-radius: 12px;
-          margin-bottom: 25px;
-        }
-
-        .meeting-info h3 {
-          color: #0b3e71;
-          margin-bottom: 15px;
-        }
-
-        .code-display {
-          display: flex;
-          gap: 10px;
-          justify-content: center;
-          align-items: center;
-          margin-bottom: 10px;
-        }
-
-        .code {
-          font-size: 32px;
-          font-weight: 700;
-          color: #0b3e71;
-          letter-spacing: 4px;
-        }
-
-        .copy-btn {
-          background: #0b3e71;
-          color: white;
-          border: none;
-          padding: 8px 15px;
-          border-radius: 6px;
-          cursor: pointer;
-          font-size: 14px;
-        }
-
-        .instruction {
-          color: #666;
-          font-size: 14px;
-        }
-
-        .call-actions {
-          display: flex;
-          gap: 15px;
-          margin-bottom: 25px;
-        }
-
-        .join-btn {
-          flex: 1;
-          background: #34a853;
-          color: white;
-          text-decoration: none;
-          padding: 15px;
-          border-radius: 10px;
-          font-weight: 600;
-          display: block;
-          text-align: center;
-        }
-
-        .join-btn:hover {
-          background: #2d8e47;
-        }
-
-        .end-btn {
-          flex: 1;
-          background: #dc3545;
-          color: white;
-          border: none;
-          padding: 15px;
-          border-radius: 10px;
-          cursor: pointer;
-          font-weight: 600;
-        }
-
-        .end-btn:hover {
-          background: #c82333;
-        }
-
-        .participants {
-          background: #f4f8ff;
-          padding: 20px;
-          border-radius: 12px;
-        }
-
-        .participants h4 {
-          color: #0b3e71;
-          margin-bottom: 15px;
-        }
-
-        .participants ul {
-          list-style: none;
-          padding: 0;
-        }
-
-        .participants li {
-          padding: 8px;
-          background: white;
-          margin-bottom: 8px;
-          border-radius: 6px;
-        }
-
-        .email-notice {
-          background: #d4edda;
-          color: #155724;
-          padding: 15px;
-          border-radius: 8px;
-          margin-top: 20px;
-          border: 1px solid #c3e6cb;
-        }
-
-        .email-notice p {
-          margin: 0;
-          font-weight: 500;
+        @media(max-width:480px){
+          .vc-topbar{padding:8px 12px}
+          .vc-room-name{display:none}
+          .open-tab-btn{display:none}
         }
       `}</style>
     </>

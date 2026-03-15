@@ -7,6 +7,7 @@ const cors = require("cors");
 const http = require("http");
 const { Server } = require("socket.io");
 const path = require("path");
+const Message = require("./models/Message");
 
 const app = express();
 const server = http.createServer(app);
@@ -49,26 +50,52 @@ io.on("connection", (socket) => {
     console.log(`User ${socket.id} joined group ${groupId}`);
   });
 
-  // ✅ SEND MESSAGE (Real-time)
+  // ✅ SEND MESSAGE — broadcast to others only (sender already has it optimistically)
   socket.on("sendMessage", (messageData) => {
-    // Broadcast message to all users in the group
-    io.to(messageData.groupId).emit("receiveMessage", {
+    socket.to(messageData.groupId).emit("receiveMessage", {
       ...messageData,
-      timestamp: new Date(),
+      timestamp: messageData.timestamp || new Date(),
     });
-    console.log(`Message sent in group ${messageData.groupId}:`, messageData.content);
   });
 
-  // ✅ MARK MESSAGE AS DELIVERED
-  socket.on("messageDelivered", (data) => {
+  // ✅ TYPING INDICATOR
+  socket.on("typing", (data) => {
+    socket.to(data.groupId).emit("userTyping", { groupId: data.groupId, userId: data.userId, userName: data.userName });
+  });
+
+  socket.on("stopTyping", (data) => {
+    socket.to(data.groupId).emit("userStoppedTyping", { groupId: data.groupId, userId: data.userId, userName: data.userName });
+  });
+
+  // ✅ MARK MESSAGE AS DELIVERED — also persist to DB
+  socket.on("messageDelivered", async (data) => {
+    try {
+      await Message.findByIdAndUpdate(data.messageId, { status: "delivered" });
+    } catch (e) { /* ignore */ }
     io.to(data.groupId).emit("updateMessageStatus", {
       messageId: data.messageId,
       status: "delivered",
     });
   });
 
-  // ✅ MARK MESSAGE AS READ
-  socket.on("messageRead", (data) => {
+  // ✅ MARK ALL MESSAGES AS READ (bulk) — when user opens a group
+  socket.on("markAllRead", async (data) => {
+    try {
+      const updated = await Message.updateMany(
+        { groupId: data.groupId, senderEmail: { $ne: data.userEmail }, status: { $ne: "read" } },
+        { status: "read" }
+      );
+      if (updated.modifiedCount > 0) {
+        io.to(data.groupId).emit("allMessagesRead", { groupId: data.groupId, userEmail: data.userEmail });
+      }
+    } catch (e) { /* ignore */ }
+  });
+
+  // ✅ MARK MESSAGE AS READ (single)
+  socket.on("messageRead", async (data) => {
+    try {
+      await Message.findByIdAndUpdate(data.messageId, { status: "read" });
+    } catch (e) { /* ignore */ }
     io.to(data.groupId).emit("updateMessageStatus", {
       messageId: data.messageId,
       status: "read",

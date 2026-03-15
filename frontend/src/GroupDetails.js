@@ -10,6 +10,11 @@ function GroupDetails() {
   const [group, setGroup] = useState(null);
   const [showMembers, setShowMembers] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [selectedNewAdmin, setSelectedNewAdmin] = useState("");
+  const [transferring, setTransferring] = useState(false);
+  const [showLeaveModal, setShowLeaveModal] = useState(false);
+  const [leaving, setLeaving] = useState(false);
 
   const user = JSON.parse(localStorage.getItem("user"));
 
@@ -59,19 +64,34 @@ function GroupDetails() {
 
   /* ================= EXIT GROUP ================= */
   const exitGroup = async () => {
-    if (!window.confirm("Leave this group?")) return;
-
+    setLeaving(true);
     try {
-      await axios.post(
-        `${API_URL}/api/group/${groupId}/exit`,
-        { userId: user._id }
-      );
-
-      alert("You left the group");
+      await axios.post(`${API_URL}/api/group/${groupId}/exit`, { userId: user._id });
+      setShowLeaveModal(false);
       navigate("/dashboard");
-
     } catch (err) {
       alert(err.response?.data?.msg || "Exit failed");
+    } finally {
+      setLeaving(false);
+    }
+  };
+
+  /* ================= ADMIN LEAVE (transfer then exit) ================= */
+  const adminLeave = async () => {
+    if (!selectedNewAdmin) return alert("Please select a new admin");
+    setTransferring(true);
+    try {
+      await axios.post(`${API_URL}/api/group/${groupId}/transfer-admin`, {
+        adminId: user._id,
+        newAdminId: selectedNewAdmin,
+      });
+      await axios.post(`${API_URL}/api/group/${groupId}/exit`, { userId: user._id });
+      alert("Admin transferred and you have left the group");
+      navigate("/dashboard");
+    } catch (err) {
+      alert(err.response?.data?.msg || "Failed to transfer admin");
+    } finally {
+      setTransferring(false);
     }
   };
 
@@ -149,7 +169,7 @@ function GroupDetails() {
                   {group.members.map((member) => (
                     <li key={member.id} className="member-row">
 
-                      {member.email}
+                      {member.fullName || member.email}
 
                       {/* REMOVE BUTTON */}
                       {isAdmin && member.id !== group.adminId && (
@@ -171,9 +191,73 @@ function GroupDetails() {
 
           {/* EXIT BUTTON */}
           {!isAdmin && (
-            <button className="exit-btn" onClick={exitGroup}>
-              Leave Group
+            <button className="exit-btn" onClick={() => setShowLeaveModal(true)}>
+              🚪 Leave Group
             </button>
+          )}
+
+          {/* LEAVE CONFIRM MODAL */}
+          {showLeaveModal && (
+            <div className="modal-overlay">
+              <div className="modal-box">
+                <h3>Leave Group?</h3>
+                <p>Are you sure you want to leave <strong>{group.groupName}</strong>? You won't be able to see messages unless re-invited.</p>
+                <div className="modal-actions">
+                  <button
+                    className="confirm-btn"
+                    style={{ background: "#ff7a45" }}
+                    onClick={exitGroup}
+                    disabled={leaving}
+                  >
+                    {leaving ? "Leaving..." : "Yes, Leave"}
+                  </button>
+                  <button className="cancel-btn" onClick={() => setShowLeaveModal(false)}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ADMIN LEAVE BUTTON */}
+          {isAdmin && (
+            <button className="exit-btn" onClick={() => { setSelectedNewAdmin(""); setShowTransferModal(true); }}>
+              🚪 Leave Group
+            </button>
+          )}
+
+          {/* TRANSFER MODAL */}
+          {showTransferModal && (
+            <div className="modal-overlay">
+              <div className="modal-box">
+                <h3>Select New Admin</h3>
+                <p>You must assign a new admin before leaving.</p>
+                <select
+                  value={selectedNewAdmin}
+                  onChange={e => setSelectedNewAdmin(e.target.value)}
+                  className="admin-select"
+                >
+                  <option value="">-- Choose a member --</option>
+                  {group.members
+                    .filter(m => m.id !== user._id)
+                    .map(m => (
+                      <option key={m.id} value={m.id}>{m.fullName || m.email}</option>
+                    ))}
+                </select>
+                <div className="modal-actions">
+                  <button
+                    className="confirm-btn"
+                    onClick={adminLeave}
+                    disabled={transferring || !selectedNewAdmin}
+                  >
+                    {transferring ? "Processing..." : "Confirm & Leave"}
+                  </button>
+                  <button className="cancel-btn" onClick={() => setShowTransferModal(false)}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
           )}
 
           {/* BACK */}
@@ -206,6 +290,7 @@ function GroupDetails() {
           align-items:center;
           gap:20px;
           margin-bottom:40px;
+          position:static;
         }
 
         .group-avatar{
@@ -287,6 +372,33 @@ function GroupDetails() {
         }
 
         .center{text-align:center;margin-top:60px}
+
+        .modal-overlay{
+          position:fixed;inset:0;background:rgba(0,0,0,0.5);
+          display:flex;align-items:center;justify-content:center;z-index:1000;
+        }
+        .modal-box{
+          background:white;padding:30px;border-radius:16px;
+          width:90%;max-width:400px;box-shadow:0 20px 60px rgba(0,0,0,0.2);
+        }
+        .modal-box h3{margin-bottom:8px;color:#0b3e71;}
+        .modal-box p{font-size:13px;color:#666;margin-bottom:16px;}
+        .admin-select{
+          width:100%;padding:10px;border-radius:8px;
+          border:1.5px solid #dce8ff;font-size:14px;margin-bottom:16px;
+          outline:none;
+        }
+        .modal-actions{display:flex;gap:10px;}
+        .confirm-btn{
+          flex:1;background:#0b3e71;color:white;
+          border:none;padding:10px;border-radius:8px;
+          cursor:pointer;font-weight:600;
+        }
+        .confirm-btn:disabled{opacity:0.6;cursor:not-allowed;}
+        .cancel-btn{
+          flex:1;background:#ddd;color:#333;
+          border:none;padding:10px;border-radius:8px;cursor:pointer;
+        }
       `}</style>
     </>
   );

@@ -3,10 +3,28 @@ const router = express.Router();
 
 const Group = require("../models/Group");
 const User = require("../models/User");
+const Message = require("../models/Message");
 
 const nodemailer = require("nodemailer");
 const jwt = require("jsonwebtoken");
 const mongoose = require("mongoose");
+
+/* ================= HELPER: save + broadcast system message ================= */
+const sendSystemMessage = async (req, groupId, text) => {
+  try {
+    const msg = await Message.create({
+      content: text,
+      groupId,
+      isSystem: true,
+      status: "read",
+      timestamp: new Date(),
+    });
+    const io = req.app.get("io");
+    if (io) io.to(groupId.toString()).emit("receiveMessage", msg);
+  } catch (e) {
+    console.error("System message error:", e.message);
+  }
+};
 
 /* ================= EMAIL SETUP ================= */
 const transporter = nodemailer.createTransport({
@@ -55,6 +73,9 @@ router.post("/create", async (req, res) => {
     });
 
     await group.save();
+
+    const adminName = admin.fullName || admin.email || "Admin";
+    await sendSystemMessage(req, group._id, `${adminName} created the group`);
 
     res.status(201).json(group);
   } catch (err) {
@@ -118,9 +139,12 @@ router.get("/accept/:token", async (req, res) => {
     const group = await Group.findById(groupId);
     if (!group) return res.status(404).json({ msg: "Group not found" });
 
-    if (!group.members.includes(user._id)) {
+    const alreadyMember = group.members.map(m => m.toString()).includes(user._id.toString());
+    if (!alreadyMember) {
       group.members.push(user._id);
       await group.save();
+      const joinedName = user.fullName || user.email || "Someone";
+      await sendSystemMessage(req, group._id, `${joinedName} joined the group`);
     }
 
     const loginToken = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
@@ -156,8 +180,8 @@ router.get("/user/:userId", async (req, res) => {
       return res.status(400).json({ msg: "Invalid userId" });
 
     const groups = await Group.find({ members: userId })
-      .populate("admin", "email")
-      .populate("members", "email");
+      .populate("admin", "email fullName")
+      .populate("members", "email fullName");
 
     const result = groups.map((g) => ({
       _id: g._id,
@@ -167,45 +191,13 @@ router.get("/user/:userId", async (req, res) => {
       members: g.members.map((m) => ({
         id: m._id,
         email: m.email,
+        fullName: m.fullName,
       })),
     }));
 
     res.json(result);
   } catch (err) {
     console.error("USER GROUP FETCH ERROR ❌", err);
-    res.status(500).json({ msg: "Server error" });
-  }
-});
-
-/* =====================================================
-   GROUP DETAILS
-===================================================== */
-router.get("/:groupId", async (req, res) => {
-  try {
-    const { groupId } = req.params;
-
-    if (!mongoose.Types.ObjectId.isValid(groupId))
-      return res.status(400).json({ msg: "Invalid groupId" });
-
-    const group = await Group.findById(groupId)
-      .populate("admin", "email")
-      .populate("members", "email");
-
-    if (!group) return res.status(404).json({ msg: "Group not found" });
-
-    res.json({
-      groupName: group.name,
-      adminEmail: group.admin.email,
-      adminId: group.admin._id, // ⭐ important for frontend
-      memberCount: group.members.length,
-      members: group.members.map((m) => ({
-        id: m._id,
-        email: m.email,
-      })),
-      createdAt: group.createdAt,
-    });
-  } catch (err) {
-    console.error("GROUP DETAILS ERROR ❌", err);
     res.status(500).json({ msg: "Server error" });
   }
 });
@@ -241,8 +233,13 @@ router.delete("/:groupId/remove/:memberId", async (req, res) => {
     group.members = group.members.filter(
       (id) => id.toString() !== memberId
     );
-
     await group.save();
+
+    const removedUser = await User.findById(memberId).select("email fullName");
+    const adminUser = await User.findById(adminId).select("email fullName");
+    const removedName = removedUser?.fullName || removedUser?.email || "A member";
+    const adminName = adminUser?.fullName || adminUser?.email || "Admin";
+    await sendSystemMessage(req, groupId, `${adminName} removed ${removedName} from the group`);
 
     res.json({ msg: "Member removed successfully" });
   } catch (err) {
@@ -251,6 +248,43 @@ router.delete("/:groupId/remove/:memberId", async (req, res) => {
   }
 });
 /* =====================================================
+   TRANSFER ADMIN (ADMIN ONLY)
+===================================================== */
+router.post("/:groupId/transfer-admin", async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    const { adminId, newAdminId } = req.body;
+
+    if (
+      !mongoose.Types.ObjectId.isValid(groupId) ||
+      !mongoose.Types.ObjectId.isValid(adminId) ||
+      !mongoose.Types.ObjectId.isValid(newAdminId)
+    ) return res.status(400).json({ msg: "Invalid IDs" });
+
+    const group = await Group.findById(groupId);
+    if (!group) return res.status(404).json({ msg: "Group not found" });
+
+    if (group.admin.toString() !== adminId)
+      return res.status(403).json({ msg: "Only admin can transfer" });
+
+    if (!group.members.map(m => m.toString()).includes(newAdminId))
+      return res.status(400).json({ msg: "New admin must be a group member" });
+
+    group.admin = newAdminId;
+    await group.save();
+
+    const newAdmin = await User.findById(newAdminId).select("email fullName");
+    const newAdminName = newAdmin?.fullName || newAdmin?.email || "A member";
+    await sendSystemMessage(req, groupId, `${newAdminName} is now the admin`);
+
+    res.json({ msg: "Admin transferred successfully" });
+  } catch (err) {
+    console.error("TRANSFER ADMIN ERROR ❌", err);
+    res.status(500).json({ msg: "Server error" });
+  }
+});
+
+/* =====================================================
    LEAVE GROUP (USER LEAVES HIMSELF)
 ===================================================== */
 router.post("/:groupId/exit", async (req, res) => {
@@ -258,39 +292,60 @@ router.post("/:groupId/exit", async (req, res) => {
     const { groupId } = req.params;
     const { userId } = req.body;
 
-    // validate ids
     if (
       !mongoose.Types.ObjectId.isValid(groupId) ||
       !mongoose.Types.ObjectId.isValid(userId)
-    ) {
-      return res.status(400).json({ msg: "Invalid IDs" });
-    }
+    ) return res.status(400).json({ msg: "Invalid IDs" });
 
     const group = await Group.findById(groupId);
     if (!group) return res.status(404).json({ msg: "Group not found" });
 
-    // ❌ admin cannot leave group
-    if (group.admin.toString() === userId) {
-      return res
-        .status(400)
-        .json({ msg: "Admin cannot leave group. Transfer admin first." });
-    }
+    if (group.admin.toString() === userId)
+      return res.status(400).json({ msg: "Transfer admin before leaving" });
 
-    // ❌ user not in group
-    if (!group.members.includes(userId)) {
+    if (!group.members.map(m => m.toString()).includes(userId))
       return res.status(404).json({ msg: "User not in group" });
-    }
 
-    // ✅ remove user
-    group.members = group.members.filter(
-      (id) => id.toString() !== userId
-    );
-
+    group.members = group.members.filter(id => id.toString() !== userId);
     await group.save();
+
+    const leavingUser = await User.findById(userId).select("email fullName");
+    const leavingName = leavingUser?.fullName || leavingUser?.email || "A member";
+    await sendSystemMessage(req, groupId, `${leavingName} left the group`);
 
     res.json({ msg: "You left the group successfully" });
   } catch (err) {
     console.error("EXIT GROUP ERROR ❌", err);
+    res.status(500).json({ msg: "Server error" });
+  }
+});
+
+/* =====================================================
+   GROUP DETAILS — must be last to avoid shadowing other routes
+===================================================== */
+router.get("/:groupId", async (req, res) => {
+  try {
+    const { groupId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(groupId))
+      return res.status(400).json({ msg: "Invalid groupId" });
+
+    const group = await Group.findById(groupId)
+      .populate("admin", "email fullName")
+      .populate("members", "email fullName");
+
+    if (!group) return res.status(404).json({ msg: "Group not found" });
+
+    res.json({
+      groupName: group.name,
+      adminEmail: group.admin.email,
+      adminId: group.admin._id,
+      memberCount: group.members.length,
+      members: group.members.map((m) => ({ id: m._id, email: m.email, fullName: m.fullName })),
+      createdAt: group.createdAt,
+    });
+  } catch (err) {
+    console.error("GROUP DETAILS ERROR ❌", err);
     res.status(500).json({ msg: "Server error" });
   }
 });

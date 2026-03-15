@@ -41,7 +41,7 @@ function AcceptInvite() {
           setMessage("Successfully joined the group 🎉");
 
           setTimeout(() => {
-            navigate(`/group/${res.data.groupId}`);
+            navigate(`/messages/${res.data.groupId}`);
           }, 2000);
         }
 

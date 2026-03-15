@@ -26,9 +26,10 @@ router.post("/start", async (req, res) => {
       return res.status(400).json({ msg: "Missing required fields" });
     }
 
-    // Generate 8-character meeting code
-    const meetingCode = crypto.randomBytes(4).toString("hex").toUpperCase();
-    const meetingLink = `https://meet.google.com/${meetingCode}`;
+    // Jitsi Meet — free, no account needed, works for everyone
+    const roomName = `SquadUp-${groupId}-${Date.now()}`;
+    const meetingCode = roomName;
+    const meetingLink = `https://meet.jit.si/${roomName}`;
 
     // Store call info
     activeCalls.set(meetingCode, {
@@ -59,8 +60,8 @@ router.post("/start", async (req, res) => {
                 <p><strong>${initiatorName}</strong> has started a video call in <strong>${group.name}</strong></p>
                 
                 <div style="background: white; padding: 20px; border-radius: 8px; margin: 20px 0;">
-                  <h3 style="color: #0b3e71;">Meeting Code:</h3>
-                  <p style="font-size: 24px; font-weight: bold; color: #0b3e71; letter-spacing: 3px;">${meetingCode}</p>
+                  <h3 style="color: #0b3e71;">Meeting Room:</h3>
+                  <p style="font-size: 16px; font-weight: bold; color: #0b3e71;">${meetingCode}</p>
                 </div>
 
                 <a href="${meetingLink}" 

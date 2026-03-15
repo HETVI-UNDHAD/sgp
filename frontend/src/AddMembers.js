@@ -61,7 +61,7 @@ function AddMembers() {
       setEmails([]);
 
       setTimeout(() => {
-        navigate(`/group/${groupId}`);
+        navigate(`/messages/${groupId}`);
       }, 1200);
 
     } catch (err) {

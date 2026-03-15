@@ -12,7 +12,7 @@ const messageSchema = new mongoose.Schema(
     sender: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      required: false,
     },
 
     senderName: String,
@@ -53,6 +53,9 @@ const messageSchema = new mongoose.Schema(
         }
       ]
     },
+
+    // System message (e.g. member left, removed, admin changed)
+    isSystem: { type: Boolean, default: false },
   },
   { timestamps: true }
 );
