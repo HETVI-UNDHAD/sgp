@@ -4,6 +4,7 @@ const router = express.Router();
 const Group = require("../models/Group");
 const User = require("../models/User");
 const Message = require("../models/Message");
+const Invitation = require("../models/Invitation");
 
 const nodemailer = require("nodemailer");
 const jwt = require("jsonwebtoken");
@@ -98,16 +99,39 @@ router.post("/invite", async (req, res) => {
       expiresIn: "24h",
     });
 
-    const link = `http://localhost:3000/accept-invite/${token}`;
+    // Save invitation to DB
+    const invitation = new Invitation({
+      email,
+      groupId,
+      token,
+    });
+    await invitation.save();
+
+    const link = `http://localhost:3000/accept-invite?token=${encodeURIComponent(token)}`;
 
     await transporter.sendMail({
-      from: `"Team App" <${process.env.EMAIL_USER}>`,
+      from: `"SquadUp" <${process.env.EMAIL_USER}>`,
       to: email,
-      subject: "Group Invitation",
+      subject: "You're invited to join a group on SquadUp",
       html: `
-        <h3>You are invited to join a group</h3>
-        <a href="${link}">Accept Invitation</a>
-        <p>Valid for 24 hours</p>
+        <!DOCTYPE html>
+        <html>
+        <body style="margin:0;padding:0;background:#07070f;font-family:Arial,sans-serif;">
+          <div style="max-width:480px;margin:40px auto;background:#1a1a2e;border-radius:16px;overflow:hidden;border:1px solid rgba(255,255,255,0.1);">
+            <div style="background:linear-gradient(135deg,#3b0764,#7c3aed);padding:32px;text-align:center;">
+              <h1 style="color:white;margin:0;font-size:24px;">SquadUp</h1>
+              <p style="color:rgba(255,255,255,0.8);margin:8px 0 0;">Group Invitation</p>
+            </div>
+            <div style="padding:32px;text-align:center;">
+              <p style="color:#f1f5f9;font-size:16px;margin-bottom:8px;">You have been invited to join a group!</p>
+              <p style="color:#94a3b8;font-size:14px;margin-bottom:32px;">Click the button below to accept. Link valid for 24 hours.</p>
+              <a href="${link}" style="display:inline-block;background:linear-gradient(135deg,#7c3aed,#a855f7);color:white;text-decoration:none;padding:14px 36px;border-radius:10px;font-size:15px;font-weight:600;">Accept Invitation</a>
+              <p style="color:#64748b;font-size:12px;margin-top:28px;">If button doesn't work, copy this link:</p>
+              <p style="color:#a855f7;font-size:11px;word-break:break-all;">${link}</p>
+            </div>
+          </div>
+        </body>
+        </html>
       `,
     });
 
@@ -119,11 +143,31 @@ router.post("/invite", async (req, res) => {
 });
 
 /* =====================================================
-   ACCEPT INVITE + AUTO LOGIN
+   GET PENDING INVITATIONS FOR USER
 ===================================================== */
-router.get("/accept/:token", async (req, res) => {
+router.get("/invitations/:email", async (req, res) => {
   try {
-    const decoded = jwt.verify(req.params.token, process.env.JWT_SECRET);
+    const invitations = await Invitation.find({
+      email: req.params.email,
+      status: "pending",
+    }).populate({
+      path: "groupId",
+      populate: {
+        path: "admin",
+        select: "email",
+      },
+    });
+
+    res.json(invitations);
+  } catch (err) {
+    console.error("GET INVITATIONS ERROR ❌", err);
+    res.status(500).json({ msg: "Server error" });
+  }
+});
+router.get("/accept", async (req, res) => {
+  try {
+    const rawToken = decodeURIComponent(req.query.token || "");
+    const decoded = jwt.verify(rawToken, process.env.JWT_SECRET);
     const { email, groupId } = decoded;
 
     const user = await User.findOne({ email });
@@ -146,6 +190,12 @@ router.get("/accept/:token", async (req, res) => {
       const joinedName = user.fullName || user.email || "Someone";
       await sendSystemMessage(req, group._id, `${joinedName} joined the group`);
     }
+
+    // Update invitation status
+    await Invitation.findOneAndUpdate(
+      { token: rawToken },
+      { status: "accepted" }
+    );
 
     const loginToken = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
       expiresIn: "7d",
@@ -316,6 +366,37 @@ router.post("/:groupId/exit", async (req, res) => {
     res.json({ msg: "You left the group successfully" });
   } catch (err) {
     console.error("EXIT GROUP ERROR ❌", err);
+    res.status(500).json({ msg: "Server error" });
+  }
+});
+
+/* =====================================================
+   DELETE GROUP (ADMIN ONLY)
+===================================================== */
+router.delete("/:groupId", async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    const { adminId } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(groupId) || !mongoose.Types.ObjectId.isValid(adminId))
+      return res.status(400).json({ msg: "Invalid IDs" });
+
+    const group = await Group.findById(groupId);
+    if (!group) return res.status(404).json({ msg: "Group not found" });
+
+    if (group.admin.toString() !== adminId)
+      return res.status(403).json({ msg: "Only admin can delete the group" });
+
+    await Message.deleteMany({ groupId });
+    await Invitation.deleteMany({ groupId });
+    await Group.findByIdAndDelete(groupId);
+
+    const io = req.app.get("io");
+    if (io) io.to(groupId.toString()).emit("groupDeleted", { groupId });
+
+    res.json({ msg: "Group deleted successfully" });
+  } catch (err) {
+    console.error("DELETE GROUP ERROR ❌", err);
     res.status(500).json({ msg: "Server error" });
   }
 });

@@ -3,472 +3,369 @@ import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import squadUpLogo from "./squaduplogo.png";
 import { API_URL } from "./config";
-import socket from "./socket";
+import "./theme.css";
 
 function Dashboard() {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
   const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
-  const [unreadCounts, setUnreadCounts] = useState({});
-  const [mounted, setMounted] = useState(false);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [hoveredGroup, setHoveredGroup] = useState(null);
+  const [tooltipPos, setTooltipPos] = useState({ top: 0 });
 
   useEffect(() => {
     const stored = localStorage.getItem("user");
     if (!stored) { navigate("/login"); return; }
-    const u = JSON.parse(stored);
-    setUser(u);
-    axios.get(`${API_URL}/api/group/user/${u._id}`)
-      .then(r => {
-        setGroups(r.data);
-        if (r.data.length > 0) {
-          const ids = r.data.map(g => g._id).join(",");
-          axios.get(`${API_URL}/api/messages/unread?groupIds=${ids}&userEmail=${encodeURIComponent(u.email || "")}`)
-            .then(res => setUnreadCounts(res.data))
-            .catch(() => {});
-        }
-      })
-      .catch(() => {})
-      .finally(() => { setLoading(false); setTimeout(() => setMounted(true), 50); });
+    const parsed = JSON.parse(stored);
+    setUser(parsed);
+    setLoading(false);
+    axios.get(`${API_URL}/api/group/user/${parsed._id}`)
+      .then(res => setGroups(res.data)).catch(() => {});
   }, [navigate]);
 
-  useEffect(() => {
-    if (!user) return;
-    const handleNewMsg = (msg) => {
-      if (msg.senderEmail !== user.email) {
-        setUnreadCounts(prev => ({ ...prev, [msg.groupId]: (prev[msg.groupId] || 0) + 1 }));
-      }
-    };
-    socket.on("receiveMessage", handleNewMsg);
-    return () => socket.off("receiveMessage", handleNewMsg);
-  }, [user]);
-
-  if (loading) return (
-    <div className="db-loading">
-      <div className="db-loader-ring">
-        <div /><div /><div /><div />
-      </div>
-      <p>Loading your workspace...</p>
-    </div>
-  );
+  if (loading) return <div className="db-loading"><div className="db-spinner" /></div>;
   if (!user) return null;
 
-  const initial = user.fullName?.charAt(0).toUpperCase();
-  const filtered = groups.filter(g => g.name.toLowerCase().includes(search.toLowerCase()));
-  const totalUnread = Object.values(unreadCounts).reduce((a, b) => a + b, 0);
-  const adminGroups = groups.filter(g => g.adminEmail === user.email).length;
-  const hour = new Date().getHours();
-  const greeting = hour < 12 ? "Good Morning" : hour < 17 ? "Good Afternoon" : "Good Evening";
+  const firstLetter = user.fullName?.charAt(0).toUpperCase();
+  const groupsCreated = groups.filter(g => g.adminEmail === user.email).length;
+  const groupsJoined = groups.length - groupsCreated;
 
-  const colors = [
-    ["#0b3e71","#1565c0"], ["#6a1b9a","#ab47bc"], ["#00695c","#26a69a"],
-    ["#bf360c","#ef6c00"], ["#1565c0","#42a5f5"], ["#2e7d32","#66bb6a"],
+  const getGreeting = () => {
+    const h = new Date().getHours();
+    if (h < 12) return "Good Morning";
+    if (h < 17) return "Good Afternoon";
+    return "Good Evening";
+  };
+
+  const quickActions = [
+    { icon: "➕", label: "Create Group", sub: "Start a new squad", path: "/create-group", color: "#7c3aed" },
+    { icon: "👥", label: "My Groups", sub: "View all groups", path: "/my-groups", color: "#0ea5e9" },
+    { icon: "👤", label: "Edit Profile", sub: "Update your info", path: "/profile", color: "#10b981" },
   ];
 
   return (
     <>
-      <div className={`db-wrap ${mounted ? "db-mounted" : ""}`}>
-
-        {/* ── PARTICLES ── */}
-        {[...Array(8)].map((_, i) => <div key={i} className={`db-particle db-p${i}`} />)}
-
-        {/* ── NAV SPACER ── */}
-        <div className="db-nav-spacer" />
-
-        {/* ── NAVBAR ── */}
-        <nav className="db-nav">
-          <div className="db-brand" onClick={() => navigate("/")} title="Home">
-            <img src={squadUpLogo} alt="logo" />
-            <span>SquadUp</span>
+      <div className="db-wrap">
+        {/* SIDEBAR */}
+        <aside className="db-sidebar">
+          <div className="db-sidebar-brand">
+            <img src={squadUpLogo} alt="logo" /><span>SquadUp</span>
           </div>
-          <div className="db-nav-center">
-            <span className="db-wave">👋</span>
-            <span>{greeting}, <strong>{user.fullName}</strong></span>
+          <nav className="db-nav">
+            <button className="db-nav-item active" onClick={() => navigate("/dashboard")}><span>🏠</span> Dashboard</button>
+            <button className="db-nav-item" onClick={() => navigate("/my-groups")}><span>👥</span> My Groups</button>
+            <button className="db-nav-item" onClick={() => navigate("/create-group")}><span>➕</span> Create Group</button>
+            <button className="db-nav-item" onClick={() => navigate("/profile")}><span>👤</span> Profile</button>
+          </nav>
+          <div className="db-sidebar-label">GROUPS</div>
+          <div className="db-sidebar-groups">
+            {groups.length === 0
+              ? <p className="db-empty-groups">No groups yet</p>
+              : groups.map(g => (
+                <div
+                  key={g._id}
+                  className="db-group-item"
+                  onClick={() => navigate(`/messages/${g._id}`)}
+                  onMouseEnter={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    setTooltipPos({ top: rect.top });
+                    setHoveredGroup(g);
+                  }}
+                  onMouseLeave={() => setHoveredGroup(null)}
+                >
+                  <div className="db-group-dot">{g.name.charAt(0).toUpperCase()}</div>
+                  <span>{g.name}</span>
+                </div>
+              ))
+            }
           </div>
-          <div className="db-nav-right">
-            {totalUnread > 0 && (
-              <div className="db-notif-dot">{totalUnread}</div>
-            )}
-            <button className="db-create-nav-btn" onClick={() => navigate("/create-group")}>
-              <span>＋</span> Create Group
-            </button>
-            <div className="db-avatar" onClick={() => navigate("/profile")} title="Profile">
-              {initial}
-              <div className="db-avatar-ring" />
+          <div className="db-sidebar-footer">
+            <div className="db-user-info" onClick={() => setShowProfileMenu(!showProfileMenu)}>
+              <div className="db-avatar-sm">{firstLetter}</div>
+              <div><p className="db-user-name">{user.fullName}</p><p className="db-user-email">{user.email}</p></div>
             </div>
-            <button className="db-logout" onClick={() => { localStorage.clear(); navigate("/login"); }}>
-              Logout
-            </button>
+            {showProfileMenu && (
+              <div className="db-profile-popup glass">
+                <div className="db-popup-stats">
+                  <span>Joined: {groups.length}</span>
+                  <span>Created: {groupsCreated}</span>
+                </div>
+                <button onClick={() => { navigate("/profile"); setShowProfileMenu(false); }}>Edit Profile</button>
+                <button className="db-logout-item" onClick={() => { localStorage.clear(); navigate("/login"); }}>Logout</button>
+              </div>
+            )}
           </div>
-        </nav>
+        </aside>
 
-        {/* ── BODY ── */}
-        <div className="db-body">
-
-          {/* ── STATS ROW ── */}
-          <div className="db-stats">
-            {[
-              { icon: "👥", label: "Total Groups",   val: groups.length },
-              { icon: "👑", label: "Admin Of",        val: adminGroups },
-              { icon: "💬", label: "Unread Messages", val: totalUnread },
-              { icon: "👤", label: "Members Total",   val: groups.reduce((a, g) => a + g.memberCount, 0) },
-            ].map((s, i) => (
-              <div key={i} className="db-stat-card" style={{ animationDelay: `${i * 0.1}s` }}>
-                <div className="db-stat-icon">{s.icon}</div>
-                <div className="db-stat-val">{s.val}</div>
-                <div className="db-stat-label">{s.label}</div>
+        {/* GROUP HOVER TOOLTIP */}
+        {hoveredGroup && (
+          <div
+            className="db-group-tooltip"
+            style={{ top: tooltipPos.top }}
+            onMouseEnter={() => setHoveredGroup(hoveredGroup)}
+            onMouseLeave={() => setHoveredGroup(null)}
+          >
+            <div className="dgt-header">
+              <div className="dgt-avatar">{hoveredGroup.name.charAt(0).toUpperCase()}</div>
+              <div>
+                <p className="dgt-name">{hoveredGroup.name}</p>
+                <span className={`dgt-badge ${hoveredGroup.adminEmail === user.email ? "admin" : "member"}`}>
+                  {hoveredGroup.adminEmail === user.email ? "👑 Admin" : "👤 Member"}
+                </span>
+              </div>
+            </div>
+            <div className="dgt-divider" />
+            <div className="dgt-row"><span className="dgt-lbl">Admin</span><span className="dgt-val">{hoveredGroup.adminEmail}</span></div>
+            <div className="dgt-row"><span className="dgt-lbl">Members</span><span className="dgt-val">{hoveredGroup.memberCount}</span></div>
+            {hoveredGroup.members?.slice(0, 4).map((m, i) => (
+              <div key={i} className="dgt-member">
+                <div className="dgt-m-avatar">{(m.fullName || m.email || "U").charAt(0).toUpperCase()}</div>
+                <span>{m.fullName || m.email}</span>
               </div>
             ))}
+            {hoveredGroup.memberCount > 4 && <p className="dgt-more">+{hoveredGroup.memberCount - 4} more members</p>}
+            <div className="dgt-divider" />
+            <button className="dgt-btn" onClick={() => { setHoveredGroup(null); navigate(`/messages/${hoveredGroup._id}`); }}>💬 Open Chat</button>
           </div>
+        )}
 
-          {/* ── SEARCH ── */}
-          <div className="db-search-wrap">
-            <span className="db-search-icon">🔍</span>
-            <input
-              className="db-search"
-              placeholder="Search groups..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-            />
-            {search && (
-              <button className="db-search-clear" onClick={() => setSearch("")}>✕</button>
-            )}
-          </div>
+        {/* MAIN */}
+        <main className="db-main">
+          <div className="db-content">
 
-          {/* ── GROUP LIST ── */}
-          {filtered.length === 0 ? (
-            <div className="db-empty">
-              <div className="db-empty-icon">🏘️</div>
-              <h3>{search ? "No groups match your search" : "No groups yet"}</h3>
-              <p>{search ? "Try a different keyword" : "Create a group or wait for an invite to get started."}</p>
-              {!search && (
-                <button onClick={() => navigate("/create-group")}>＋ Create Group</button>
-              )}
-            </div>
-          ) : (
-            <div className="db-list">
-              <div className="db-list-header">
-                <span>Groups ({filtered.length})</span>
+            {/* WELCOME BANNER */}
+            <div className="db-banner glass">
+              <div className="db-banner-left">
+                <p className="db-greeting">{getGreeting()},</p>
+                <h2 className="db-name">{user.fullName} 👋</h2>
+                <p className="db-tagline">Here's what's happening with your squads today.</p>
               </div>
-              {filtered.map((g, i) => {
-                const [c1, c2] = colors[i % colors.length];
-                const isAdmin = g.adminEmail === user.email;
-                const unread = unreadCounts[g._id] || 0;
-                return (
-                  <div
-                    key={g._id}
-                    className="db-group-row"
-                    style={{ animationDelay: `${i * 0.07}s` }}
-                    onClick={() => {
-                      setUnreadCounts(prev => ({ ...prev, [g._id]: 0 }));
-                      navigate(`/messages/${g._id}`);
-                    }}
-                  >
-                    {/* Avatar */}
-                    <div className="db-group-avatar" style={{ background: `linear-gradient(135deg,${c1},${c2})` }}>
-                      {g.name.charAt(0).toUpperCase()}
-                    </div>
-
-                    {/* Info */}
-                    <div className="db-group-info">
-                      <div className="db-group-name">{g.name}</div>
-                      <div className="db-group-meta">
-                        <span>👥 {g.memberCount} members</span>
-                        {isAdmin && <span className="db-admin-pill">👑 Admin</span>}
-                      </div>
-                    </div>
-
-                    {/* Right side */}
-                    <div className="db-group-right">
-                      {unread > 0 && (
-                        <span className="db-unread-badge">{unread > 99 ? "99+" : unread}</span>
-                      )}
-                      <div className="db-row-arrow">›</div>
-                    </div>
-                  </div>
-                );
-              })}
+              <button className="db-banner-btn" onClick={() => navigate("/create-group")}>+ New Group</button>
             </div>
-          )}
-        </div>
+
+            {/* STATS */}
+            <div className="db-stats-row">
+              <div className="db-stat-card glass">
+                <div className="db-stat-icon" style={{ background: "rgba(124,58,237,0.15)", color: "#a78bfa" }}>👥</div>
+                <div>
+                  <p className="db-stat-label">Total Groups</p>
+                  <h2 className="db-stat-num">{groups.length}</h2>
+                </div>
+              </div>
+              <div className="db-stat-card glass">
+                <div className="db-stat-icon" style={{ background: "rgba(14,165,233,0.15)", color: "#38bdf8" }}>🛡️</div>
+                <div>
+                  <p className="db-stat-label">Groups Created</p>
+                  <h2 className="db-stat-num">{groupsCreated}</h2>
+                </div>
+              </div>
+              <div className="db-stat-card glass">
+                <div className="db-stat-icon" style={{ background: "rgba(16,185,129,0.15)", color: "#34d399" }}>🤝</div>
+                <div>
+                  <p className="db-stat-label">Groups Joined</p>
+                  <h2 className="db-stat-num">{groupsJoined}</h2>
+                </div>
+              </div>
+            </div>
+
+            {/* QUICK ACTIONS */}
+            <div className="db-section-title">Quick Actions</div>
+            <div className="db-actions-row">
+              {quickActions.map(a => (
+                <div key={a.label} className="db-action-card glass" onClick={() => navigate(a.path)}>
+                  <div className="db-action-icon" style={{ background: a.color + "22", color: a.color }}>{a.icon}</div>
+                  <div>
+                    <p className="db-action-label">{a.label}</p>
+                    <p className="db-action-sub">{a.sub}</p>
+                  </div>
+                  <span className="db-action-arrow">→</span>
+                </div>
+              ))}
+            </div>
+
+            {/* PROFILE CARD */}
+            <div className="db-section-title">Your Profile</div>
+            <div className="db-profile-card glass">
+              <div className="db-profile-avatar">{firstLetter}</div>
+              <div className="db-profile-info">
+                <h3>{user.fullName}</h3>
+                <p>✉️ {user.email}</p>
+                {user.phone && <p>📞 {user.phone}</p>}
+                {user.educationType === "college" && <p>🎓 {user.collegeName} · {user.branch} · Sem {user.semester}</p>}
+                {user.educationType === "school" && <p>🏫 {user.schoolName} · Std {user.standard} · {user.stream}</p>}
+                {user.skills && <p>⚡ {user.skills}</p>}
+                {user.bio && <p className="db-bio">"{user.bio}"</p>}
+              </div>
+              <button className="db-edit-btn" onClick={() => navigate("/profile")}>Edit Profile</button>
+            </div>
+
+            {/* RECENT GROUPS */}
+            {groups.length > 0 && (
+              <>
+                <div className="db-section-title">Recent Groups</div>
+                <div className="db-recent-grid">
+                  {groups.slice(0, 4).map(g => (
+                    <div key={g._id} className="db-recent-card glass" onClick={() => navigate(`/messages/${g._id}`)}>
+                      <div className="db-recent-avatar">{g.name.charAt(0).toUpperCase()}</div>
+                      <div className="db-recent-info">
+                        <p className="db-recent-name">{g.name}</p>
+                        <p className="db-recent-meta">
+                          <span className={`db-role-badge ${g.adminEmail === user.email ? "admin" : "member"}`}>
+                            {g.adminEmail === user.email ? "Admin" : "Member"}
+                          </span>
+                          · {g.memberCount} members
+                        </p>
+                      </div>
+                      <span className="db-recent-arrow">→</span>
+                    </div>
+                  ))}
+                </div>
+                {groups.length > 4 && (
+                  <button className="db-view-all" onClick={() => navigate("/my-groups")}>
+                    View all {groups.length} groups →
+                  </button>
+                )}
+              </>
+            )}
+
+          </div>
+        </main>
       </div>
 
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap');
-        *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; font-family:'Poppins',sans-serif; }
+        .db-loading { min-height:100vh; display:flex; align-items:center; justify-content:center; }
+        .db-spinner { width:40px; height:40px; border:3px solid var(--card-border); border-top-color:var(--accent); border-radius:50%; animation:spin .8s linear infinite; }
+        @keyframes spin { to{transform:rotate(360deg)} }
 
-        /* ── LOADING ── */
-        .db-loading {
-          height:100vh; display:flex; flex-direction:column;
-          align-items:center; justify-content:center; gap:20px;
-          background:linear-gradient(135deg,#0b3e71,#071e38);
-        }
-        .db-loader-ring {
-          display:inline-block; position:relative; width:64px; height:64px;
-        }
-        .db-loader-ring div {
-          box-sizing:border-box; display:block; position:absolute;
-          width:48px; height:48px; margin:8px;
-          border:5px solid transparent; border-top-color:#fff;
-          border-radius:50%; animation:db-ring 1.2s cubic-bezier(.5,0,.5,1) infinite;
-        }
-        .db-loader-ring div:nth-child(1){animation-delay:-.45s}
-        .db-loader-ring div:nth-child(2){animation-delay:-.3s}
-        .db-loader-ring div:nth-child(3){animation-delay:-.15s}
-        @keyframes db-ring{0%{transform:rotate(0)}100%{transform:rotate(360deg)}}
-        .db-loading p { color:rgba(255,255,255,.7); font-size:14px; }
+        .db-wrap { display:flex; min-height:100vh; background:transparent; }
 
-        /* ── WRAP ── */
-        .db-wrap {
-          min-height:100vh;
-          background:linear-gradient(160deg,#f0f4ff 0%,#e8f0fe 50%,#f4f7ff 100%);
-          position:relative; overflow-x:hidden;
-        }
+        /* SIDEBAR */
+        .db-sidebar { width:260px; min-height:100vh; background:rgba(13,13,26,0.9); backdrop-filter:blur(20px); border-right:1px solid var(--card-border); display:flex; flex-direction:column; padding:24px 16px; position:sticky; top:0; height:100vh; overflow-y:auto; }
+        .db-sidebar-brand { display:flex; align-items:center; gap:10px; padding:0 8px; margin-bottom:32px; font-size:18px; font-weight:700; }
+        .db-sidebar-brand img { width:34px; height:34px; border-radius:50%; }
+        .db-nav { display:flex; flex-direction:column; gap:4px; margin-bottom:28px; }
+        .db-nav-item { display:flex; align-items:center; gap:12px; padding:10px 14px; border-radius:10px; border:none; background:none; color:var(--text-muted); font-size:14px; cursor:pointer; text-align:left; transition:all .2s; }
+        .db-nav-item:hover,.db-nav-item.active { background:rgba(124,58,237,0.12); color:var(--accent2); }
+        .db-sidebar-label { font-size:11px; font-weight:700; letter-spacing:2px; color:var(--text-muted); padding:0 8px; margin-bottom:10px; }
+        .db-sidebar-groups { flex:1; overflow-y:auto; }
+        .db-empty-groups { font-size:13px; color:var(--text-muted); padding:0 8px; }
+        .db-group-item { display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:10px; cursor:pointer; font-size:13px; color:var(--text-muted); transition:all .2s; margin-bottom:2px; }
+        .db-group-item:hover { background:rgba(124,58,237,0.1); color:var(--text); }
+        .db-group-dot { width:30px; height:30px; border-radius:8px; background:linear-gradient(135deg,var(--accent),var(--accent2)); color:white; font-size:13px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+        .db-sidebar-footer { margin-top:auto; padding-top:16px; border-top:1px solid var(--card-border); position:relative; }
+        .db-user-info { display:flex; align-items:center; gap:10px; padding:10px; border-radius:10px; cursor:pointer; transition:background .2s; }
+        .db-user-info:hover { background:var(--card); }
+        .db-avatar-sm { width:34px; height:34px; border-radius:50%; background:linear-gradient(135deg,var(--accent),var(--accent2)); color:white; font-weight:700; display:flex; align-items:center; justify-content:center; font-size:14px; flex-shrink:0; }
+        .db-user-name { font-size:13px; font-weight:600; color:var(--text); }
+        .db-user-email { font-size:11px; color:var(--text-muted); }
+        .db-profile-popup { position:absolute; bottom:70px; left:0; right:0; padding:12px; border-radius:12px; z-index:50; background:#1a1a2e; border:1px solid var(--card-border); }
+        .db-popup-stats { display:flex; justify-content:space-between; font-size:12px; color:var(--text-muted); padding:8px 4px; margin-bottom:8px; border-bottom:1px solid var(--card-border); }
+        .db-profile-popup button { display:block; width:100%; padding:9px 12px; background:none; border:none; color:var(--text); font-size:13px; text-align:left; cursor:pointer; border-radius:8px; transition:background .2s; }
+        .db-profile-popup button:hover { background:var(--card); }
+        .db-logout-item { color:var(--error) !important; }
 
-        /* ── PARTICLES ── */
-        .db-particle {
-          position:fixed; border-radius:50%; pointer-events:none;
-          opacity:0; animation:db-float 15s ease-in-out infinite;
-        }
-        .db-mounted .db-particle { opacity:.06; }
-        .db-p0{width:120px;height:120px;background:#0b3e71;top:8%;left:2%;animation-delay:0s}
-        .db-p1{width:70px;height:70px;background:#1565c0;top:25%;right:4%;animation-delay:3s}
-        .db-p2{width:90px;height:90px;background:#6a1b9a;top:55%;left:1%;animation-delay:6s}
-        .db-p3{width:50px;height:50px;background:#00695c;bottom:25%;right:3%;animation-delay:2s}
-        .db-p4{width:60px;height:60px;background:#bf360c;top:75%;left:45%;animation-delay:4s}
-        .db-p5{width:80px;height:80px;background:#1565c0;top:40%;right:15%;animation-delay:7s}
-        .db-p6{width:40px;height:40px;background:#2e7d32;top:15%;left:40%;animation-delay:1s}
-        .db-p7{width:55px;height:55px;background:#0b3e71;bottom:10%;left:20%;animation-delay:5s}
-        @keyframes db-float{0%,100%{transform:translateY(0) rotate(0deg)}33%{transform:translateY(-25px) rotate(120deg)}66%{transform:translateY(15px) rotate(240deg)}}
+        /* MAIN */
+        .db-main { flex:1; overflow-y:auto; }
+        .db-content { padding:32px; display:flex; flex-direction:column; gap:24px; }
 
-        /* ── NAV SPACER ── */
-        .db-nav-spacer {
-          height:0.5rem;
-          background:#071e38;
+        /* BANNER */
+        .db-banner { display:flex; justify-content:space-between; align-items:center; padding:32px 36px; background:linear-gradient(135deg,rgba(124,58,237,0.2),rgba(168,85,247,0.1)); border:1px solid rgba(124,58,237,0.25); }
+        .db-greeting { font-size:14px; color:var(--accent2); font-weight:500; margin-bottom:4px; }
+        .db-name { font-size:26px; font-weight:800; margin-bottom:6px; }
+        .db-tagline { font-size:14px; color:var(--text-muted); }
+        .db-banner-btn { background:linear-gradient(135deg,var(--accent),var(--accent2)); color:#fff; border:none; padding:13px 28px; border-radius:12px; font-size:14px; font-weight:600; cursor:pointer; white-space:nowrap; transition:.2s; box-shadow:0 4px 16px rgba(124,58,237,0.35); }
+        .db-banner-btn:hover { transform:translateY(-2px); box-shadow:0 8px 24px rgba(124,58,237,0.45); }
+
+        /* STATS */
+        .db-stats-row { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; }
+        .db-stat-card { display:flex; align-items:center; gap:18px; padding:24px 28px; }
+        .db-stat-icon { width:52px; height:52px; border-radius:14px; display:flex; align-items:center; justify-content:center; font-size:22px; flex-shrink:0; }
+        .db-stat-label { font-size:12px; color:var(--text-muted); font-weight:600; letter-spacing:.8px; text-transform:uppercase; margin-bottom:6px; }
+        .db-stat-num { font-size:34px; font-weight:800; background:linear-gradient(135deg,var(--accent),var(--accent2)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; line-height:1; }
+
+        /* SECTION TITLE */
+        .db-section-title { font-size:13px; font-weight:700; letter-spacing:1.5px; color:var(--text-muted); text-transform:uppercase; }
+
+        /* QUICK ACTIONS */
+        .db-actions-row { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
+        .db-action-card { display:flex; align-items:center; gap:16px; padding:20px 22px; cursor:pointer; transition:all .2s; }
+        .db-action-card:hover { transform:translateY(-3px); border-color:var(--accent); box-shadow:0 12px 32px rgba(124,58,237,0.15); }
+        .db-action-icon { width:46px; height:46px; border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:20px; flex-shrink:0; }
+        .db-action-label { font-size:14px; font-weight:600; margin-bottom:2px; }
+        .db-action-sub { font-size:12px; color:var(--text-muted); }
+        .db-action-arrow { margin-left:auto; color:var(--text-muted); font-size:18px; }
+
+        /* PROFILE CARD */
+        .db-profile-card { display:flex; align-items:center; gap:22px; padding:26px 30px; }
+        .db-profile-avatar { width:64px; height:64px; border-radius:50%; background:linear-gradient(135deg,var(--accent),var(--accent2)); color:white; font-size:26px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; box-shadow:0 0 24px rgba(124,58,237,0.3); }
+        .db-profile-info { flex:1; }
+        .db-profile-info h3 { font-size:17px; font-weight:700; margin-bottom:6px; }
+        .db-profile-info p { font-size:13px; color:var(--text-muted); margin-bottom:4px; }
+        .db-bio { font-style:italic; color:var(--accent2) !important; }
+        .db-edit-btn { background:transparent; border:1px solid var(--card-border); color:var(--text); padding:10px 20px; border-radius:10px; cursor:pointer; font-size:13px; font-weight:500; white-space:nowrap; transition:.2s; }
+        .db-edit-btn:hover { border-color:var(--accent); color:var(--accent2); }
+
+        /* RECENT GROUPS */
+        .db-recent-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:14px; }
+        .db-recent-card { display:flex; align-items:center; gap:14px; padding:18px 22px; cursor:pointer; transition:all .2s; }
+        .db-recent-card:hover { border-color:var(--accent); transform:translateY(-2px); box-shadow:0 10px 28px rgba(124,58,237,0.12); }
+        .db-recent-avatar { width:44px; height:44px; border-radius:12px; background:linear-gradient(135deg,var(--accent),var(--accent2)); color:white; font-weight:700; font-size:18px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+        .db-recent-info { flex:1; }
+        .db-recent-name { font-size:14px; font-weight:600; margin-bottom:4px; }
+        .db-recent-meta { font-size:12px; color:var(--text-muted); display:flex; align-items:center; gap:6px; }
+        .db-role-badge { font-size:11px; font-weight:600; padding:2px 8px; border-radius:20px; }
+        .db-role-badge.admin { background:rgba(124,58,237,0.15); color:var(--accent2); }
+        .db-role-badge.member { background:rgba(14,165,233,0.12); color:#38bdf8; }
+        .db-recent-arrow { color:var(--text-muted); font-size:16px; }
+
+        .db-view-all { background:none; border:1px solid var(--card-border); color:var(--text-muted); padding:11px 24px; border-radius:10px; cursor:pointer; font-size:13px; font-weight:500; transition:.2s; align-self:flex-start; }
+        .db-view-all:hover { border-color:var(--accent); color:var(--accent2); }
+
+        /* GROUP HOVER TOOLTIP */
+        .db-group-tooltip {
           position:fixed;
-          top:0; left:0; right:0;
-          z-index:201;
+          left:268px;
+          width:260px;
+          background:#1a1a2e;
+          border:1px solid rgba(124,58,237,0.3);
+          border-radius:16px;
+          padding:18px;
+          z-index:999;
+          box-shadow:0 20px 60px rgba(0,0,0,0.5),0 0 0 1px rgba(124,58,237,0.1);
+          animation:tooltipIn .15s ease;
         }
+        @keyframes tooltipIn{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:translateX(0)}}
+        .dgt-header { display:flex; align-items:center; gap:12px; margin-bottom:14px; }
+        .dgt-avatar { width:44px; height:44px; border-radius:12px; background:linear-gradient(135deg,var(--accent),var(--accent2)); color:white; font-size:18px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+        .dgt-name { font-size:15px; font-weight:700; color:var(--text); margin-bottom:4px; }
+        .dgt-badge { font-size:11px; font-weight:600; padding:2px 8px; border-radius:20px; }
+        .dgt-badge.admin { background:rgba(124,58,237,0.2); color:#a78bfa; }
+        .dgt-badge.member { background:rgba(14,165,233,0.15); color:#38bdf8; }
+        .dgt-divider { height:1px; background:rgba(255,255,255,0.07); margin:12px 0; }
+        .dgt-row { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+        .dgt-lbl { font-size:11px; color:var(--text-muted); font-weight:600; text-transform:uppercase; letter-spacing:.5px; }
+        .dgt-val { font-size:12px; color:var(--text); font-weight:500; max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .dgt-member { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
+        .dgt-m-avatar { width:24px; height:24px; border-radius:50%; background:rgba(124,58,237,0.2); color:#a78bfa; font-size:10px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+        .dgt-member span { font-size:12px; color:var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .dgt-more { font-size:11px; color:var(--text-muted); margin-bottom:4px; }
+        .dgt-btn { width:100%; padding:9px; background:linear-gradient(135deg,var(--accent),var(--accent2)); border:none; color:white; border-radius:10px; font-size:13px; font-weight:600; cursor:pointer; transition:.2s; margin-top:4px; }
+        .dgt-btn:hover { opacity:.9; transform:translateY(-1px); }
 
-        /* ── NAVBAR ── */
-        .db-nav {
-          position:fixed;
-          top:0.5rem;
-          left:0; right:0;
-          z-index:200;
-          display:flex;
-          justify-content:space-between;
-          align-items:center;
-          padding:16px 60px;
-          background:rgba(7,30,56,0.95);
-          backdrop-filter:blur(16px);
-          border-bottom:1px solid rgba(255,255,255,.08);
-          box-shadow:0 4px 24px rgba(11,62,113,.35);
+        @media(max-width:900px) {
+          .db-stats-row,.db-actions-row { grid-template-columns:1fr 1fr; }
         }
-
-        .db-brand {
-          display:flex; align-items:center; gap:10px;
-          font-size:18px; font-weight:700; color:#fff;
-          cursor:pointer; flex-shrink:0; transition:.2s;
-        }
-        .db-brand:hover { opacity:.85; transform:scale(1.03); }
-        .db-brand img { width:34px; height:34px; border-radius:50%; object-fit:cover; border:2px solid rgba(255,255,255,.4); }
-
-        .db-nav-center {
-          flex:1; display:flex; align-items:center; gap:8px;
-          color:#fff; font-size:14px; opacity:.92;
-          padding-left:20px; border-left:1px solid rgba(255,255,255,.2);
-        }
-        .db-wave { font-size:18px; animation:db-wave 2.5s ease-in-out infinite; display:inline-block; }
-        @keyframes db-wave{0%,100%{transform:rotate(0)}20%{transform:rotate(20deg)}60%{transform:rotate(-12deg)}}
-
-        .db-nav-right { display:flex; align-items:center; gap:12px; flex-shrink:0; position:relative; }
-
-        .db-notif-dot {
-          background:#ff4444; color:#fff;
-          font-size:11px; font-weight:700;
-          min-width:22px; height:22px; border-radius:11px;
-          display:flex; align-items:center; justify-content:center;
-          padding:0 6px; animation:db-pulse 2s ease-in-out infinite;
-        }
-        @keyframes db-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.15)}}
-
-        .db-avatar {
-          width:38px; height:38px; border-radius:50%;
-          background:rgba(255,255,255,.2); border:2px solid rgba(255,255,255,.5);
-          color:#fff; font-weight:700; font-size:15px;
-          display:flex; align-items:center; justify-content:center;
-          cursor:pointer; transition:.25s; position:relative;
-        }
-        .db-avatar:hover { background:rgba(255,255,255,.35); transform:scale(1.1); }
-        .db-avatar-ring {
-          position:absolute; inset:-4px; border-radius:50%;
-          border:2px solid rgba(255,255,255,.3);
-          animation:db-spin-ring 3s linear infinite;
-        }
-        @keyframes db-spin-ring{to{transform:rotate(360deg)}}
-
-        .db-logout {
-          background:transparent; border:1.5px solid rgba(255,255,255,.4);
-          color:rgba(255,255,255,.9); padding:7px 16px; border-radius:8px;
-          cursor:pointer; font-size:12px; font-weight:500; transition:.2s;
-        }
-        .db-logout:hover { border-color:#fff; color:#fff; background:rgba(255,255,255,.1); }
-
-        /* ── BODY ── */
-        .db-body { max-width:900px; margin:0 auto; padding:36px 24px 80px; margin-top:90px; }
-
-        @keyframes db-fadeUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
-
-        .db-create-nav-btn {
-          background:rgba(255,255,255,.15); color:#fff;
-          border:1.5px solid rgba(255,255,255,.4); padding:8px 18px;
-          border-radius:50px; font-size:13px; font-weight:600;
-          cursor:pointer; white-space:nowrap;
-          display:flex; align-items:center; gap:6px;
-          transition:.22s; backdrop-filter:blur(8px);
-        }
-        .db-create-nav-btn:hover { background:rgba(255,255,255,.28); border-color:#fff; transform:translateY(-1px); }
-
-        /* ── STATS ── */
-        .db-stats {
-          display:grid; grid-template-columns:repeat(4,1fr); gap:16px;
-          margin-bottom:28px;
-        }
-        .db-stat-card {
-          background:#fff; border-radius:18px; padding:22px 16px;
-          text-align:center;
-          box-shadow:0 4px 16px rgba(11,62,113,.07);
-          border:1.5px solid #e8f0fe;
-          animation:db-fadeUp .6s ease both;
-          transition:.25s;
-        }
-        .db-stat-card:hover { transform:translateY(-4px); box-shadow:0 12px 30px rgba(11,62,113,.13); border-color:#c5d8ff; }
-        .db-stat-icon { font-size:28px; margin-bottom:8px; }
-        .db-stat-val { font-size:28px; font-weight:800; color:#0b3e71; line-height:1; margin-bottom:4px; }
-        .db-stat-label { font-size:12px; color:#8a9bbf; font-weight:500; }
-
-        /* ── SEARCH ── */
-        .db-search-wrap { position:relative; margin-bottom:20px; }
-        .db-search-icon { position:absolute; left:16px; top:50%; transform:translateY(-50%); font-size:15px; pointer-events:none; }
-        .db-search {
-          width:100%; padding:13px 44px 13px 46px;
-          border:1.5px solid #dce8ff; border-radius:14px;
-          font-size:14px; background:#fff; outline:none;
-          transition:border-color .2s, box-shadow .2s; color:#1a1a2e;
-          box-shadow:0 2px 8px rgba(11,62,113,.05);
-        }
-        .db-search:focus { border-color:#1565c0; box-shadow:0 0 0 3px rgba(21,101,192,.1); }
-        .db-search-clear {
-          position:absolute; right:14px; top:50%; transform:translateY(-50%);
-          background:none; border:none; cursor:pointer; color:#aaa; font-size:14px;
-          transition:.2s;
-        }
-        .db-search-clear:hover { color:#0b3e71; }
-
-        /* ── LIST HEADER ── */
-        .db-list-header {
-          font-size:12px; font-weight:700; color:#8a9bbf;
-          text-transform:uppercase; letter-spacing:1.5px;
-          margin-bottom:12px; padding:0 4px;
-        }
-
-        /* ── GROUP ROW ── */
-        .db-list { display:flex; flex-direction:column; gap:10px; }
-
-        .db-group-row {
-          background:#fff; border-radius:18px; padding:16px 20px;
-          display:flex; align-items:center; gap:16px;
-          cursor:pointer;
-          box-shadow:0 2px 12px rgba(11,62,113,.06);
-          border:1.5px solid transparent;
-          transition:all .22s ease;
-          animation:db-rowIn .45s ease both;
-          position:relative; overflow:hidden;
-        }
-        .db-group-row::before {
-          content:''; position:absolute; left:0; top:0; bottom:0;
-          width:4px; border-radius:4px 0 0 4px;
-          background:linear-gradient(180deg,#0b3e71,#1565c0);
-          transform:scaleY(0); transition:.22s; transform-origin:center;
-        }
-        .db-group-row:hover::before { transform:scaleY(1); }
-        @keyframes db-rowIn{from{opacity:0;transform:translateX(-20px)}to{opacity:1;transform:translateX(0)}}
-        .db-group-row:hover {
-          border-color:#c5d8ff;
-          box-shadow:0 8px 28px rgba(11,62,113,.13);
-          transform:translateX(4px);
-        }
-
-        .db-group-avatar {
-          width:52px; height:52px; border-radius:16px;
-          color:#fff; font-size:22px; font-weight:700;
-          display:flex; align-items:center; justify-content:center;
-          flex-shrink:0; box-shadow:0 4px 12px rgba(0,0,0,.15);
-          transition:.22s;
-        }
-        .db-group-row:hover .db-group-avatar { transform:scale(1.08) rotate(-3deg); }
-
-        .db-group-info { flex:1; min-width:0; }
-        .db-group-name {
-          font-size:15px; font-weight:700; color:#0d1b2e;
-          white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-          margin-bottom:5px;
-        }
-        .db-group-meta { font-size:12px; color:#8a9bbf; display:flex; align-items:center; gap:8px; }
-        .db-admin-pill {
-          background:linear-gradient(135deg,#fff3cd,#ffeaa7);
-          color:#856404; font-size:10px; font-weight:700;
-          padding:2px 8px; border-radius:20px; border:1px solid #ffd700;
-        }
-
-        .db-group-right { display:flex; align-items:center; gap:10px; flex-shrink:0; }
-
-        .db-unread-badge {
-          background:linear-gradient(135deg,#e53935,#ff5252);
-          color:#fff; font-size:11px; font-weight:700;
-          min-width:22px; height:22px; border-radius:11px;
-          display:flex; align-items:center; justify-content:center;
-          padding:0 6px; animation:db-pulse 2s ease-in-out infinite;
-          box-shadow:0 2px 8px rgba(229,57,53,.4);
-        }
-
-        .db-row-arrow {
-          font-size:24px; color:#c5d8ff; font-weight:300;
-          transition:.22s;
-        }
-        .db-group-row:hover .db-row-arrow { color:#1565c0; transform:translateX(4px); }
-
-        /* ── EMPTY ── */
-        .db-empty {
-          background:#fff; border-radius:24px; padding:72px 24px;
-          text-align:center; box-shadow:0 4px 20px rgba(11,62,113,.06);
-          animation:db-fadeUp .6s ease both;
-        }
-        .db-empty-icon { font-size:60px; margin-bottom:18px; animation:db-bounce 2s ease-in-out infinite; }
-        @keyframes db-bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
-        .db-empty h3 { font-size:20px; color:#0b3e71; margin-bottom:8px; font-weight:700; }
-        .db-empty p  { font-size:14px; color:#888; margin-bottom:28px; }
-        .db-empty button {
-          background:linear-gradient(135deg,#0b3e71,#1565c0);
-          color:#fff; border:none; padding:13px 32px;
-          border-radius:50px; font-size:14px; font-weight:600; cursor:pointer;
-          box-shadow:0 6px 20px rgba(11,62,113,.3); transition:.25s;
-        }
-        .db-empty button:hover { transform:translateY(-2px); box-shadow:0 10px 28px rgba(11,62,113,.4); }
-
-        /* ── RESPONSIVE ── */
-        @media(max-width:700px){
-          .db-nav { padding:14px 16px; }
-          .db-nav-center { display:none; }
-          .db-body { padding:20px 14px 60px; margin-top:80px; }
-          .db-stats { grid-template-columns:repeat(2,1fr); }
-          .db-group-row { padding:14px 14px; }
+        @media(max-width:768px) {
+          .db-sidebar { display:none; }
+          .db-stats-row { grid-template-columns:1fr 1fr; }
+          .db-actions-row { grid-template-columns:1fr; }
+          .db-banner { flex-direction:column; gap:16px; align-items:flex-start; }
+          .db-profile-card { flex-direction:column; text-align:center; }
+          .db-content { padding:20px; }
         }
       `}</style>
     </>
   );
 }
-
 export default Dashboard;

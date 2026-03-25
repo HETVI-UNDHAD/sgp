@@ -112,4 +112,24 @@ router.put("/:messageId/read", async (req, res) => {
   }
 });
 
+// ✅ DELETE single message
+router.delete("/:messageId", async (req, res) => {
+  try {
+    await Message.findByIdAndDelete(req.params.messageId);
+    res.json({ msg: "Message deleted" });
+  } catch (err) {
+    res.status(500).json({ msg: "Server error" });
+  }
+});
+
+// ✅ CLEAR all messages in a group
+router.delete("/clear/:groupId", async (req, res) => {
+  try {
+    await Message.deleteMany({ groupId: req.params.groupId });
+    res.json({ msg: "Chat cleared" });
+  } catch (err) {
+    res.status(500).json({ msg: "Server error" });
+  }
+});
+
 module.exports = router;

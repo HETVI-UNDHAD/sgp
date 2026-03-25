@@ -42,7 +42,7 @@ function App() {
         <Route path="/group/:groupId/add-members" element={<AddMembers />} />
 
         {/* Invite */}
-        <Route path="/accept-invite/:token" element={<AcceptInvite />} />
+        <Route path="/accept-invite" element={<AcceptInvite />} />
       </Routes>
     </BrowserRouter>
   );

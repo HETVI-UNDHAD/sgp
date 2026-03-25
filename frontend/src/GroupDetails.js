@@ -282,7 +282,7 @@ function GroupDetails() {
         }
 
         .details-header{
-          background:linear-gradient(135deg,#0b3e71,#1f5fa3);
+          background:linear-gradient(135deg,#7b1fa2,#ba68c8);
           color:white;
           padding:30px;
           border-radius:16px;
@@ -295,7 +295,7 @@ function GroupDetails() {
 
         .group-avatar{
           width:80px;height:80px;border-radius:50%;
-          background:white;color:#0b3e71;
+          background:white;color:#7b1fa2;
           display:flex;align-items:center;justify-content:center;
           font-size:32px;font-weight:600;
         }
@@ -310,7 +310,7 @@ function GroupDetails() {
         }
 
         .primary-btn{
-          background:#0b3e71;color:white;
+          background:#7b1fa2;color:white;
           padding:10px 18px;border-radius:8px;
           border:none;cursor:pointer;margin-bottom:15px;
         }
