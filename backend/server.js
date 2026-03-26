@@ -8,6 +8,10 @@ const http = require("http");
 const { Server } = require("socket.io");
 const path = require("path");
 const Message = require("./models/Message");
+const User = require("./models/User");
+
+// Map: userId -> socketId for presence
+const onlineUsers = new Map();
 
 const app = express();
 const server = http.createServer(app);
@@ -42,6 +46,14 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 ===================================================== */
 io.on("connection", (socket) => {
   console.log("User connected:", socket.id);
+
+  // ✅ USER PRESENCE — register online
+  socket.on("userOnline", async (userId) => {
+    socket.userId = userId;
+    onlineUsers.set(userId, socket.id);
+    try { await User.findByIdAndUpdate(userId, { isOnline: true, lastSeen: new Date() }); } catch {}
+    io.emit("presenceUpdate", { userId, isOnline: true });
+  });
 
   // ✅ JOIN GROUP ROOM
   socket.on("joinGroup", (groupId) => {
@@ -81,12 +93,31 @@ io.on("connection", (socket) => {
   // ✅ MARK ALL MESSAGES AS READ (bulk) — when user opens a group
   socket.on("markAllRead", async (data) => {
     try {
-      const updated = await Message.updateMany(
-        { groupId: data.groupId, senderEmail: { $ne: data.userEmail }, status: { $ne: "read" } },
-        { status: "read" }
-      );
-      if (updated.modifiedCount > 0) {
-        io.to(data.groupId).emit("allMessagesRead", { groupId: data.groupId, userEmail: data.userEmail });
+      const { groupId, userEmail, userId, userName, totalMembers } = data;
+
+      // Add this user to readBy on all unread messages they didn't send
+      const messages = await Message.find({
+        groupId,
+        senderEmail: { $ne: userEmail },
+        "readBy.userId": { $ne: userId },
+      });
+
+      for (const msg of messages) {
+        msg.readBy.push({ userId, userName, readAt: new Date() });
+        // If all non-sender members have read it, mark as read
+        if (totalMembers && msg.readBy.length >= totalMembers - 1) {
+          msg.status = "read";
+        }
+        await msg.save();
+      }
+
+      if (messages.length > 0) {
+        io.to(groupId).emit("allMessagesRead", {
+          groupId,
+          userId,
+          userName,
+          readBy: { userId, userName, readAt: new Date() },
+        });
       }
     } catch (e) { /* ignore */ }
   });
@@ -112,9 +143,15 @@ io.on("connection", (socket) => {
     io.to(data.groupId).emit("fileDeleted", data);
   });
 
-  // ✅ USER DISCONNECT
-  socket.on("disconnect", () => {
+  // ✅ USER DISCONNECT — mark offline + last seen
+  socket.on("disconnect", async () => {
     console.log("User disconnected:", socket.id);
+    if (socket.userId) {
+      onlineUsers.delete(socket.userId);
+      const lastSeen = new Date();
+      try { await User.findByIdAndUpdate(socket.userId, { isOnline: false, lastSeen }); } catch {}
+      io.emit("presenceUpdate", { userId: socket.userId, isOnline: false, lastSeen });
+    }
   });
 });
 
