@@ -13,10 +13,15 @@ function VideoCall() {
   const [group, setGroup] = useState(null);
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [meetingName, setMeetingName] = useState("");
+  const [timeLimit, setTimeLimit] = useState(30);
+  const [timeLeft, setTimeLeft] = useState(0);
+  const timerRef = useRef(null);
   const jitsiRef = useRef(null);
   const apiRef = useRef(null);
 
   const user = JSON.parse(localStorage.getItem("user") || "{}");
+  const isAdmin = group?.adminEmail === user.email;
 
   useEffect(() => {
     axios.get(`${API_URL}/api/group/${groupId}`).then(res => setGroup(res.data)).catch(console.error);
@@ -28,7 +33,10 @@ function VideoCall() {
       }
     });
 
-    socket.on("callEnded", () => { setCallActive(false); setRoomName(""); setMeetingLink(""); });
+    socket.on("callEnded", () => {
+      clearInterval(timerRef.current);
+      setCallActive(false); setRoomName(""); setMeetingLink(""); setTimeLeft(0);
+    });
 
     return () => { socket.off("callStarted"); socket.off("callEnded"); };
   }, [groupId, user.email]);
@@ -73,24 +81,46 @@ function VideoCall() {
   }, [callActive, roomName]);
 
   const startCall = async () => {
+    if (!meetingName.trim()) return alert("Please enter a meeting name");
     setLoading(true);
     try {
       const res = await axios.post(`${API_URL}/api/call/start`, {
         groupId, initiatorEmail: user.email, initiatorName: user.fullName || user.email,
+        meetingName: meetingName.trim(), timeLimit: Number(timeLimit),
       });
       setRoomName(res.data.meetingCode);
       setMeetingLink(res.data.meetingLink);
       setCallActive(true);
+      // start countdown
+      const seconds = Number(timeLimit) * 60;
+      setTimeLeft(seconds);
+      timerRef.current = setInterval(() => {
+        setTimeLeft(prev => {
+          if (prev <= 1) {
+            clearInterval(timerRef.current);
+            endCall();
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
     } catch { alert("Failed to start call"); }
     finally { setLoading(false); }
   };
 
   const endCall = async () => {
+    clearInterval(timerRef.current);
     try {
       if (apiRef.current) { apiRef.current.dispose(); apiRef.current = null; }
       await axios.post(`${API_URL}/api/call/end`, { meetingCode: roomName, groupId });
     } catch {}
-    setCallActive(false); setRoomName(""); setMeetingLink("");
+    setCallActive(false); setRoomName(""); setMeetingLink(""); setTimeLeft(0);
+  };
+
+  const formatTime = (secs) => {
+    const m = Math.floor(secs / 60).toString().padStart(2, "0");
+    const s = (secs % 60).toString().padStart(2, "0");
+    return `${m}:${s}`;
   };
 
   const copyLink = () => {
@@ -125,6 +155,42 @@ function VideoCall() {
               </div>
               <h3>Start a Video Meeting</h3>
               <p>Powered by <strong>Jitsi Meet</strong> — free, no account needed.<br/>Email invites sent to all members automatically.</p>
+
+              <div className="vc-form">
+                <div className="vc-field">
+                  <label>Meeting Name</label>
+                  <input
+                    className="vc-input"
+                    placeholder="e.g. Weekly Standup"
+                    value={meetingName}
+                    onChange={e => setMeetingName(e.target.value)}
+                    maxLength={60}
+                  />
+                </div>
+                {isAdmin && (
+                  <div className="vc-field">
+                    <label>Time Limit (minutes)</label>
+                    <div className="vc-time-row">
+                      {[15, 30, 45, 60, 90, 120].map(t => (
+                        <button
+                          key={t}
+                          type="button"
+                          className={`vc-time-chip ${timeLimit === t ? "active" : ""}`}
+                          onClick={() => setTimeLimit(t)}
+                        >{t}m</button>
+                      ))}
+                      <input
+                        className="vc-input vc-custom-time"
+                        type="number"
+                        min="1" max="480"
+                        placeholder="Custom"
+                        onChange={e => setTimeLimit(Number(e.target.value))}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <button className="vc-btn-start" onClick={startCall} disabled={loading}>
                 {loading ? <span className="spin"/> : "📹 Create & Join Meeting"}
               </button>
@@ -138,7 +204,14 @@ function VideoCall() {
               <div className="vc-topbar-left">
                 <span className="live-dot">🔴</span>
                 <span className="live-label">LIVE</span>
-                <span className="vc-room-name">{group?.groupName || "Meeting"}</span>
+                <span className="vc-room-name">{meetingName || group?.groupName || "Meeting"}</span>
+              </div>
+              <div className="vc-topbar-center">
+                {timeLeft > 0 && (
+                  <span className={`vc-timer ${timeLeft <= 60 ? "vc-timer-warn" : ""}`}>
+                    ⏱ {formatTime(timeLeft)}
+                  </span>
+                )}
               </div>
               <div className="vc-topbar-right">
                 <button className="copy-link-btn" onClick={copyLink}>
@@ -199,6 +272,24 @@ function VideoCall() {
         .vc-btn-start:disabled{opacity:.65;cursor:not-allowed}
         .spin{width:20px;height:20px;border:3px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite;display:inline-block}
         @keyframes spin{to{transform:rotate(360deg)}}
+
+        /* MEETING FORM */
+        .vc-form{width:100%;text-align:left;margin-bottom:24px;display:flex;flex-direction:column;gap:16px}
+        .vc-field{display:flex;flex-direction:column;gap:6px}
+        .vc-field label{font-size:13px;font-weight:600;color:#0b3e71}
+        .vc-input{width:100%;padding:10px 14px;border:1.5px solid #dce8ff;border-radius:10px;font-size:14px;outline:none;transition:border-color .2s;box-sizing:border-box}
+        .vc-input:focus{border-color:#1565c0;box-shadow:0 0 0 3px rgba(21,101,192,.1)}
+        .vc-time-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+        .vc-time-chip{padding:6px 14px;border:1.5px solid #dce8ff;border-radius:20px;background:#fff;color:#0b3e71;font-size:13px;font-weight:600;cursor:pointer;transition:.2s}
+        .vc-time-chip:hover{border-color:#1565c0;background:#e8f0fe}
+        .vc-time-chip.active{background:#0b3e71;color:#fff;border-color:#0b3e71}
+        .vc-custom-time{width:90px;padding:6px 10px;font-size:13px}
+
+        /* TIMER */
+        .vc-topbar-center{flex:1;display:flex;justify-content:center}
+        .vc-timer{background:rgba(255,255,255,.15);color:#fff;font-size:15px;font-weight:700;padding:6px 16px;border-radius:20px;letter-spacing:1px;border:1px solid rgba(255,255,255,.25)}
+        .vc-timer-warn{background:rgba(229,57,53,.7);border-color:#e53935;animation:timerPulse 1s ease-in-out infinite}
+        @keyframes timerPulse{0%,100%{opacity:1}50%{opacity:.6}}
 
         /* ACTIVE CALL FULLSCREEN */
         .vc-fullscreen{position:fixed;inset:0;display:flex;flex-direction:column;background:#1a1a2e;z-index:999;animation:fadeUp .3s ease}
