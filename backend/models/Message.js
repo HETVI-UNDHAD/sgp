@@ -32,6 +32,15 @@ const messageSchema = new mongoose.Schema(
       default: "sent",
     },
 
+    // Group read receipts — tracks who has read the message
+    readBy: [
+      {
+        userId:   { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+        userName: String,
+        readAt:   { type: Date, default: Date.now },
+      }
+    ],
+
     // Timestamp for display
     timestamp: {
       type: Date,
@@ -56,6 +65,19 @@ const messageSchema = new mongoose.Schema(
 
     // System message (e.g. member left, removed, admin changed)
     isSystem: { type: Boolean, default: false },
+
+    // Reply-to reference
+    replyTo: {
+      _id: String,
+      senderName: String,
+      content: String,
+    },
+
+    // Soft delete — users who deleted this message for themselves
+    deletedFor: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+
+    // Hard delete for everyone
+    deletedForEveryone: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

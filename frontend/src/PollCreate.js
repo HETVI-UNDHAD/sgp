@@ -168,7 +168,7 @@ function PollCreate({ groupId, userName, userEmail, userId, onPollCreate }) {
 
         .poll-form h3 {
           margin: 0 0 20px 0;
-          color: #0b3e71;
+          color: #7b1fa2;
         }
 
         .form-group {
@@ -219,7 +219,7 @@ function PollCreate({ groupId, userName, userEmail, userId, onPollCreate }) {
 
         .add-option-btn {
           padding: 8px 16px;
-          background: #0b3e71;
+          background: #7b1fa2;
           color: white;
           border: none;
           border-radius: 6px;

@@ -27,7 +27,18 @@ function Chat() {
   const [showLeaveModal, setShowLeaveModal] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [typingUsers, setTypingUsers] = useState([]);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [onlineStatus, setOnlineStatus] = useState({});
+  const [replyTo, setReplyTo] = useState(null);
   const [sidebarWidth, setSidebarWidth] = useState(280);
+  const [showClearModal, setShowClearModal] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const [toasts, setToasts] = useState([]);
+  const [confirmModal, setConfirmModal] = useState(null);
+  const [selectedMsgs, setSelectedMsgs] = useState(new Set());
+  const [selectMode, setSelectMode] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const longPressTimer = useRef(null);
   const isDragging = useRef(false);
   const dragHandleRef = useRef(null);
   const typingTimeoutRef = useRef(null);
@@ -35,6 +46,7 @@ function Chat() {
   const fileInputRef = useRef(null);
   const photoInputRef = useRef(null);
   const groupMenuRef = useRef(null);
+  const emojiPickerRef = useRef(null);
 
   const API_BASE = API_URL;
 
@@ -44,6 +56,97 @@ function Chat() {
   const userEmail = user.email || "";
 
   const isAdmin = user?._id === group?.adminId?.toString();
+
+  const EMOJIS = ["😀","😂","😍","🥰","😎","🤔","👍","👎","❤️","🔥","🎉","😢","😡","🙏","💯","✅","🚀","👀","💪","🤝","😴","🤣","😊","🥳","👏"];
+
+  const showToast = (msg, type = "info") => {
+    const id = Date.now();
+    setToasts(prev => [...prev.slice(-2), { id, msg, type }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3500);
+  };
+
+  const showConfirm = (message, onConfirm) => {
+    setConfirmModal({ message, onConfirm });
+  };
+
+  const enterSelectMode = (msgId) => {
+    setSelectMode(true);
+    setSelectedMsgs(new Set([msgId]));
+  };
+
+  const toggleSelectMsg = (msgId) => {
+    if (!selectMode) return;
+    setSelectedMsgs(prev => {
+      const next = new Set(prev);
+      next.has(msgId) ? next.delete(msgId) : next.add(msgId);
+      return next;
+    });
+  };
+
+  const cancelSelectMode = () => {
+    setSelectMode(false);
+    setSelectedMsgs(new Set());
+  };
+
+  const canDeleteForEveryone = () => {
+    return [...selectedMsgs].every(id => {
+      const msg = messages.find(m => m._id === id);
+      return msg && (msg.sender === userId || msg.senderEmail === userEmail);
+    });
+  };
+
+  const deleteSelectedMsgs = async (deleteType) => {
+    const ids = [...selectedMsgs];
+    // Optimistic update
+    if (deleteType === "everyone") {
+      setMessages(prev => prev.filter(m => !ids.includes(m._id)));
+    } else {
+      setMessages(prev => prev.filter(m => !ids.includes(m._id)));
+    }
+    cancelSelectMode();
+    setShowDeleteModal(false);
+    try {
+      await axios.post(`${API_URL}/api/messages/bulk-delete`, {
+        messageIds: ids, userId, deleteType, groupId,
+      });
+      showToast(
+        `${ids.length} message${ids.length > 1 ? "s" : ""} deleted`,
+        "success"
+      );
+    } catch (err) {
+      showToast(err.response?.data?.msg || "Delete failed", "error");
+      // Revert on failure — refetch
+      const res = await axios.get(`${API_URL}/api/messages/group/${groupId}?userId=${userId}`);
+      setMessages(res.data);
+    }
+  };
+
+  const copySelectedMsgs = async () => {
+    const ordered = messages
+      .filter(m => selectedMsgs.has(m._id))
+      .map(m => m.content || "")
+      .join("\n");
+    try {
+      await navigator.clipboard.writeText(ordered);
+      showToast(`${selectedMsgs.size} message${selectedMsgs.size > 1 ? "s" : ""} copied`, "success");
+    } catch {
+      showToast("Copy failed", "error");
+    }
+    cancelSelectMode();
+  };
+
+  const handleMsgPointerDown = (msgId) => {
+    longPressTimer.current = setTimeout(() => enterSelectMode(msgId), 500);
+  };
+
+  const handleMsgPointerUp = () => {
+    clearTimeout(longPressTimer.current);
+  };
+
+  const handleMsgContextMenu = (e, msgId) => {
+    e.preventDefault();
+    enterSelectMode(msgId);
+  };
 
   // Sidebar resize drag
   useEffect(() => {
@@ -67,17 +170,23 @@ function Chat() {
     };
   }, []);
 
-  // Close group menu on outside click
+  // Close group menu + emoji picker on outside click
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (groupMenuRef.current && !groupMenuRef.current.contains(e.target)) {
         setShowGroupMenu(false);
         setShowMembers(false);
       }
+      if (emojiPickerRef.current && !emojiPickerRef.current.contains(e.target)) {
+        setShowEmojiPicker(false);
+      }
     };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+    
+    if (showGroupMenu || showEmojiPicker) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [showGroupMenu, showEmojiPicker]);
 
   const exitGroup = async () => {
     setLeaving(true);
@@ -86,14 +195,14 @@ function Chat() {
       setShowLeaveModal(false);
       navigate("/dashboard");
     } catch (err) {
-      alert(err.response?.data?.msg || "Exit failed");
+      showToast(err.response?.data?.msg || "Exit failed", "error");
     } finally {
       setLeaving(false);
     }
   };
 
   const transferAdminAndLeave = async () => {
-    if (!selectedNewAdmin) return alert("Please select a new admin");
+    if (!selectedNewAdmin) return showToast("Please select a new admin", "error");
     try {
       await axios.post(`${API_URL}/api/group/${groupId}/transfer-admin`, {
         adminId: userId,
@@ -102,19 +211,21 @@ function Chat() {
       await axios.post(`${API_URL}/api/group/${groupId}/exit`, { userId });
       navigate("/dashboard");
     } catch (err) {
-      alert(err.response?.data?.msg || "Failed to transfer admin");
+      showToast(err.response?.data?.msg || "Failed to transfer admin", "error");
     }
   };
 
-  const removeMember = async (memberId) => {
-    if (!window.confirm("Remove this member?")) return;
-    try {
-      await axios.delete(`${API_URL}/api/group/${groupId}/remove/${memberId}`, { data: { adminId: userId } });
-      const res = await axios.get(`${API_URL}/api/group/${groupId}`);
-      setGroup(res.data);
-    } catch (err) {
-      alert(err.response?.data?.msg || "Remove failed");
-    }
+  const removeMember = (memberId) => {
+    showConfirm("Remove this member from the group?", async () => {
+      try {
+        await axios.delete(`${API_URL}/api/group/${groupId}/remove/${memberId}`, { data: { adminId: userId } });
+        const res = await axios.get(`${API_URL}/api/group/${groupId}`);
+        setGroup(res.data);
+        showToast("Member removed", "success");
+      } catch (err) {
+        showToast(err.response?.data?.msg || "Remove failed", "error");
+      }
+    });
   };
 
   // Fetch user's groups for sidebar
@@ -170,7 +281,7 @@ function Chat() {
         setGroup(groupRes.data);
 
         const messagesRes = await axios.get(
-          `${API_URL}/api/messages/group/${groupId}`
+          `${API_URL}/api/messages/group/${groupId}?userId=${userId}`
         );
         setMessages(messagesRes.data);
 
@@ -188,6 +299,16 @@ function Chat() {
 
     fetchGroupAndMessages();
   }, [groupId]);
+
+  // Listen for presence updates
+  useEffect(() => {
+    socket.emit("userOnline", userId);
+    const handlePresence = (data) => {
+      setOnlineStatus(prev => ({ ...prev, [data.userId]: { isOnline: data.isOnline, lastSeen: data.lastSeen } }));
+    };
+    socket.on("presenceUpdate", handlePresence);
+    return () => socket.off("presenceUpdate", handlePresence);
+  }, [userId]);
 
   useEffect(() => {
     const handleReceiveMessage = (messageData) => {
@@ -212,14 +333,18 @@ function Chat() {
       );
     };
 
-    // When another user reads all messages — update all our sent messages to read
+    // When another user reads messages — update readBy on our sent messages
     const handleAllMessagesRead = (data) => {
       setMessages((prev) =>
-        prev.map((msg) =>
-          msg.senderEmail === userEmail && msg.status !== "read"
-            ? { ...msg, status: "read" }
-            : msg
-        )
+        prev.map((msg) => {
+          if (msg.senderEmail !== userEmail) return msg;
+          const alreadyIn = msg.readBy?.some(r => r.userId === data.userId);
+          const newReadBy = alreadyIn
+            ? msg.readBy
+            : [...(msg.readBy || []), { userId: data.userId, userName: data.userName, readAt: new Date() }];
+          const allRead = group && newReadBy.length >= (group.memberCount || 1) - 1;
+          return { ...msg, readBy: newReadBy, status: allRead ? "read" : msg.status };
+        })
       );
     };
 
@@ -237,6 +362,14 @@ function Chat() {
       setTypingUsers(prev => prev.filter(u => u.userId !== data.userId));
     };
 
+    socket.on("messagesDeleted", (data) => {
+      if (data.deleteType === "everyone") {
+        setMessages(prev => prev.filter(m => !data.messageIds.includes(m._id)));
+      } else if (data.userId === userId) {
+        setMessages(prev => prev.filter(m => !data.messageIds.includes(m._id)));
+      }
+    });
+
     socket.on("receiveMessage", handleReceiveMessage);
     socket.on("updateMessageStatus", handleUpdateStatus);
     socket.on("allMessagesRead", handleAllMessagesRead);
@@ -244,6 +377,7 @@ function Chat() {
     socket.on("userStoppedTyping", handleUserStoppedTyping);
 
     return () => {
+      socket.off("messagesDeleted");
       socket.off("receiveMessage", handleReceiveMessage);
       socket.off("updateMessageStatus", handleUpdateStatus);
       socket.off("allMessagesRead", handleAllMessagesRead);
@@ -272,10 +406,12 @@ function Chat() {
       status: "sent",
       timestamp: new Date(),
       _id: Date.now().toString(),
+      ...(replyTo && { replyTo: { _id: replyTo._id, senderName: replyTo.senderName, content: replyTo.content } }),
     };
 
     setMessages((prev) => [...prev, newMessage]);
     setMessageInput("");
+    setReplyTo(null);
 
     try {
       const res = await axios.post(
@@ -286,6 +422,7 @@ function Chat() {
           senderName: userName,
           senderEmail: userEmail,
           groupId: groupId,
+          ...(replyTo && { replyTo: { _id: replyTo._id, senderName: replyTo.senderName, content: replyTo.content } }),
         }
       );
 
@@ -300,7 +437,7 @@ function Chat() {
       setGroupOrder(prev => [groupId, ...prev.filter(id => id !== groupId)]);
     } catch (err) {
       console.error("Error sending message:", err);
-      alert("Failed to send message");
+      showToast("Failed to send message", "error");
     }
   };
 
@@ -355,7 +492,7 @@ function Chat() {
       setShowMenu(false);
     } catch (err) {
       console.error("Error uploading document:", err);
-      alert("Failed to upload document");
+      showToast("Failed to upload document", "error");
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -367,7 +504,7 @@ function Chat() {
     if (!file) return;
 
     if (file.size > 50 * 1024 * 1024) {
-      alert("File size must be less than 50MB");
+      showToast("File size must be less than 50MB", "error");
       return;
     }
 
@@ -408,7 +545,7 @@ function Chat() {
       setShowMenu(false);
     } catch (err) {
       console.error("Error uploading photo/video:", err);
-      alert("Failed to upload photo/video");
+      showToast("Failed to upload photo/video", "error");
     } finally {
       setUploading(false);
       if (photoInputRef.current) photoInputRef.current.value = "";
@@ -432,41 +569,90 @@ function Chat() {
       a.remove();
       window.URL.revokeObjectURL(url);
     } catch {
-      alert("No files found or download failed");
+      showToast("No files found or download failed", "error");
     } finally {
       setDownloading(false);
     }
   };
 
-  const StatusTick = ({ status }) => {
-    if (status === "sent") return (
-      <svg className="tick-svg tick-sent" viewBox="0 0 16 11" fill="none">
-        <path d="M1 5.5L5.5 10L15 1" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-      </svg>
-    );
-    if (status === "delivered") return (
-      <svg className="tick-svg tick-delivered" viewBox="0 0 20 11" fill="none">
-        <path d="M1 5.5L5.5 10L15 1" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-        <path d="M6 5.5L10.5 10L20 1" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-      </svg>
-    );
-    if (status === "read") return (
-      <svg className="tick-svg tick-read" viewBox="0 0 20 11" fill="none">
-        <path d="M1 5.5L5.5 10L15 1" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-        <path d="M6 5.5L10.5 10L20 1" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-      </svg>
-    );
-    return null;
+  const clearChat = async () => {
+    setClearing(true);
+    
+    try {
+      const response = await axios.delete(`${API_URL}/api/messages/group/${groupId}/clear`, {
+        data: { userId },
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      setMessages([]);
+      setShowClearModal(false);
+      showToast("Chat cleared successfully", "success");
+    } catch (err) {
+      console.error('Clear chat error:', err);
+      showToast(err.response?.data?.msg || err.message || "Failed to clear chat", "error");
+    } finally {
+      setClearing(false);
+    }
   };
+
+  const StatusTick = ({ status, readBy }) => {
+  const seenBy = readBy && readBy.length > 0
+    ? `Seen by: ${readBy.map(r => r.userName || "Someone").join(", ")}`
+    : "";
+
+  if (status === "sent") return (
+    <svg className="tick-svg tick-sent" viewBox="0 0 16 11" fill="none" title="Sent">
+      <path d="M1 5.5L5.5 10L15 1" stroke="rgba(255,255,255,0.7)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+    </svg>
+  );
+  if (status === "delivered") return (
+    <svg className="tick-svg tick-delivered" viewBox="0 0 20 11" fill="none" title="Delivered">
+      <path d="M1 5.5L5.5 10L15 1" stroke="rgba(255,255,255,0.7)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+      <path d="M6 5.5L10.5 10L20 1" stroke="rgba(255,255,255,0.7)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+    </svg>
+  );
+  if (status === "read") return (
+    <span className="tick-read-wrap" title={seenBy}>
+      <svg className="tick-svg tick-read" viewBox="0 0 20 11" fill="none">
+        <path d="M1 5.5L5.5 10L15 1" stroke="#60a5fa" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+        <path d="M6 5.5L10.5 10L20 1" stroke="#60a5fa" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+      </svg>
+      {readBy && readBy.length > 0 && (
+        <span className="seen-count">{readBy.length}</span>
+      )}
+    </span>
+  );
+  return null;
+};
+
+
 
   const formatTime = (timestamp) => {
     const date = new Date(timestamp);
-    return date.toLocaleTimeString("en-US", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: true,
-    });
+    return date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true });
   };
+
+  const formatDateLabel = (timestamp) => {
+    const d = new Date(timestamp);
+    const today = new Date();
+    const yesterday = new Date();
+    yesterday.setDate(today.getDate() - 1);
+    if (d.toDateString() === today.toDateString()) return "Today";
+    if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  };
+
+  // Get online/last-seen text for the current group's members (for 1-on-1 or group)
+  const getHeaderStatus = () => {
+    if (!group) return null;
+    // For group chats show online member count
+    const members = group.members || [];
+    const onlineCount = members.filter(m => onlineStatus[m.id]?.isOnline).length;
+    if (onlineCount > 0) return { isOnline: true, text: `${onlineCount} online` };
+    return { isOnline: false, text: `${group.memberCount || 0} members` };
+  };
+
+  const headerStatus = getHeaderStatus();
 
   if (loading) {
     return <div className="chat-loading">Loading chat...</div>;
@@ -534,31 +720,41 @@ function Chat() {
             </button>
             <div>
               <h2>{group?.groupName || "Group Chat"}</h2>
-              <p className="member-count">{group?.memberCount || 0} members</p>
+              <div className="header-status">
+                <span className={`status-dot ${headerStatus?.isOnline ? "online" : "offline"}`} />
+                <span className="status-text">{headerStatus?.text}</span>
+              </div>
             </div>
           </div>
           {/* THREE DOT MENU */}
           <div className="group-menu-wrapper" ref={groupMenuRef}>
             <button
               className="three-dot-btn"
-              onClick={() => { setShowGroupMenu(p => !p); setShowMembers(false); }}
+              onClick={(e) => { 
+                e.stopPropagation();
+                setShowGroupMenu(prev => !prev); 
+                setShowMembers(false); 
+              }}
               title="Group options"
             >
               ⋮
             </button>
 
             {showGroupMenu && (
-              <div className="group-dropdown">
+              <div className="group-dropdown" onClick={(e) => e.stopPropagation()}>
 
                 {/* ── Members section ── */}
-                <div
+                <button
                   className="gd-item gd-item-toggle"
-                  onClick={() => setShowMembers(p => !p)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowMembers(prev => !prev);
+                  }}
                 >
                   <span className="gd-icon">👥</span>
                   <span>Members ({group?.memberCount || 0})</span>
                   <span className="gd-chevron">{showMembers ? "▲" : "▼"}</span>
-                </div>
+                </button>
 
                 {showMembers && (
                   <div className="gd-members-list">
@@ -572,7 +768,15 @@ function Chat() {
                           )}
                         </div>
                         {isAdmin && m.id?.toString() !== group.adminId?.toString() && (
-                          <button className="gd-remove-btn" onClick={() => removeMember(m.id)}>✕</button>
+                          <button 
+                            className="gd-remove-btn" 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              removeMember(m.id);
+                            }}
+                          >
+                            ✕
+                          </button>
                         )}
                       </div>
                     ))}
@@ -583,42 +787,91 @@ function Chat() {
 
                 {/* ── Add Members (admin only) ── */}
                 {isAdmin && (
-                  <div className="gd-item" onClick={() => { setShowGroupMenu(false); navigate(`/group/${groupId}/add-members`); }}>
+                  <button 
+                    className="gd-item" 
+                    onClick={(e) => { 
+                      e.stopPropagation();
+                      setShowGroupMenu(false); 
+                      navigate(`/group/${groupId}/add-members`); 
+                    }}
+                  >
                     <span className="gd-icon">➕</span>
                     <span>Add Members</span>
-                  </div>
+                  </button>
                 )}
 
                 {/* ── Download all files as ZIP ── */}
-                <div className="gd-item" onClick={downloadAllFiles}>
+                <button 
+                  className="gd-item" 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowGroupMenu(false);
+                    downloadAllFiles();
+                  }}
+                  disabled={downloading}
+                >
                   <span className="gd-icon">📥</span>
                   <span>{downloading ? "Preparing ZIP..." : "Download All Files"}</span>
-                </div>
+                </button>
+
+                {/* ── Clear Chat ── */}
+                <button 
+                  className="gd-item" 
+                  onClick={(e) => { 
+                    e.stopPropagation();
+                    setShowGroupMenu(false); 
+                    setShowClearModal(true); 
+                  }}
+                >
+                  <span className="gd-icon">🗑️</span>
+                  <span>Clear Chat</span>
+                </button>
 
                 <div className="gd-divider" />
 
                 {/* ── Video Call ── */}
-                <div className="gd-item" onClick={() => { setShowGroupMenu(false); navigate(`/video-call/${groupId}`); }}>
+                <button 
+                  className="gd-item" 
+                  onClick={(e) => { 
+                    e.stopPropagation();
+                    setShowGroupMenu(false); 
+                    navigate(`/video-call/${groupId}`); 
+                  }}
+                >
                   <span className="gd-icon">📹</span>
                   <span>Video Call</span>
-                </div>
+                </button>
 
                 <div className="gd-divider" />
 
                 {/* ── Leave Group (admin: transfer first) ── */}
                 {isAdmin && (
-                  <div className="gd-item gd-item-danger" onClick={() => { setShowGroupMenu(false); setShowTransferModal(true); }}>
+                  <button 
+                    className="gd-item gd-item-danger" 
+                    onClick={(e) => { 
+                      e.stopPropagation();
+                      setShowGroupMenu(false); 
+                      setShowTransferModal(true); 
+                    }}
+                  >
                     <span className="gd-icon">🚪</span>
                     <span>Leave Group</span>
-                  </div>
+                  </button>
                 )}
 
                 {/* ── Leave Group (non-admin) ── */}
                 {!isAdmin && (
-                  <div className="gd-item gd-item-danger" onClick={() => { setShowGroupMenu(false); setShowLeaveModal(true); }}>
+                  <button 
+                    className="gd-item gd-item-danger" 
+                    onClick={(e) => { 
+                      e.stopPropagation();
+                      setShowGroupMenu(false); 
+                      setShowLeaveModal(true); 
+                    }}
+                  >
                     <span className="gd-icon">🚪</span>
                     <span>Leave Group</span>
-                  </div>
+                  </button>
                 )}
 
               </div>
@@ -626,7 +879,25 @@ function Chat() {
           </div>
         </div>
 
-      <div className="messages-area">
+      {/* SELECTION TOP BAR */}
+      {selectMode && (
+        <div className="sel-bar">
+          <button className="sel-bar-cancel" onClick={cancelSelectMode}>✕</button>
+          <span className="sel-bar-count">{selectedMsgs.size} selected</span>
+          <div className="sel-bar-actions">
+            <button className="sel-bar-btn" onClick={copySelectedMsgs} title="Copy">
+              <svg viewBox="0 0 24 24" fill="none" width="18" height="18"><rect x="9" y="9" width="13" height="13" rx="2" stroke="currentColor" strokeWidth="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" stroke="currentColor" strokeWidth="2"/></svg>
+              Copy
+            </button>
+            <button className="sel-bar-btn sel-bar-btn-danger" onClick={() => setShowDeleteModal(true)} title="Delete">
+              <svg viewBox="0 0 24 24" fill="none" width="18" height="18"><polyline points="3 6 5 6 21 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><path d="M19 6l-1 14H6L5 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><path d="M10 11v6M14 11v6" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><path d="M9 6V4h6v2" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
+              Delete
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="messages-area" onClick={() => selectMode && cancelSelectMode()}>
         {messages.length === 0 ? (
           <div className="no-messages">
             <p>📬 No messages yet. Start the conversation!</p>
@@ -639,26 +910,58 @@ function Chat() {
               handleMarkAsRead(msg._id, msg.status);
             }
 
+            // Date separator logic
+            const prevMsg = messages[index - 1];
+            const showDateSep = !prevMsg ||
+              new Date(msg.timestamp).toDateString() !== new Date(prevMsg.timestamp).toDateString();
+
             return (
+              <React.Fragment key={msg._id || `msg-${index}`}>
+              {showDateSep && (
+                <div className="date-separator">
+                  <span className="date-label">{formatDateLabel(msg.timestamp)}</span>
+                </div>
+              )}
               <div
-                key={msg._id || `msg-${index}`}
                 className={`message ${
                   msg.isSystem
                     ? "system-message"
                     : isOwnMessage ? "own-message" : "other-message"
-                }`}
+                }${selectedMsgs.has(msg._id) ? " msg-selected" : ""}`}
+                onPointerDown={() => !msg.isSystem && handleMsgPointerDown(msg._id)}
+                onPointerUp={handleMsgPointerUp}
+                onPointerLeave={handleMsgPointerUp}
+                onContextMenu={(e) => !msg.isSystem && handleMsgContextMenu(e, msg._id)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (selectMode && !msg.isSystem) toggleSelectMsg(msg._id);
+                }}
+                style={{ cursor: selectMode ? "pointer" : "default" }}
               >
                 {msg.isSystem ? (
                   <div className="system-bubble">{msg.content}</div>
                 ) : (
                   <>
+                {selectMode && (
+                  <div className={`msg-checkbox ${isOwnMessage ? "msg-checkbox-own" : ""}`}>
+                    <div className={`msg-check-circle ${selectedMsgs.has(msg._id) ? "checked" : ""}`}>
+                      {selectedMsgs.has(msg._id) && <span>✓</span>}
+                    </div>
+                  </div>
+                )}
                 {!isOwnMessage && (
                   <div className="sender-info">
                     <span className="sender-name">{msg.senderName}</span>
                   </div>
                 )}
-
+                <div className="message-row">
                 <div className="message-bubble">
+                  {msg.replyTo && (
+                    <div className="reply-preview">
+                      <span className="reply-sender">{msg.replyTo.senderName}</span>
+                      <span className="reply-text">{msg.replyTo.content?.slice(0, 80)}{msg.replyTo.content?.length > 80 ? "..." : ""}</span>
+                    </div>
+                  )}
                   {(msg.fileType === "photo" || msg.fileType === "video") && msg.fileUrl ? (
                     <>
                       {msg.fileType === "photo" ? (
@@ -698,14 +1001,21 @@ function Chat() {
                     <span className="timestamp">
                       {formatTime(msg.timestamp)}
                     </span>
-                    {isOwnMessage && !msg.poll && (
-                      <StatusTick status={msg.status} />
-                    )}
+                    {isOwnMessage && !msg.poll && <StatusTick status={msg.status} readBy={msg.readBy} />}
                   </div>
+                </div>
+                <button
+                  className="reply-btn"
+                  title="Reply"
+                  onClick={() => setReplyTo(msg)}
+                >
+                  ↩
+                </button>
                 </div>
                   </>
                 )}
               </div>
+              </React.Fragment>
             );
           })
         )}
@@ -721,6 +1031,16 @@ function Chat() {
       </div>
 
       <form className="message-input-form" onSubmit={handleSendMessage}>
+        {replyTo && (
+          <div className="reply-bar">
+            <div className="reply-bar-content">
+              <span className="reply-bar-name">{replyTo.senderName}</span>
+              <span className="reply-bar-text">{replyTo.content?.slice(0, 80)}{replyTo.content?.length > 80 ? "..." : ""}</span>
+            </div>
+            <button type="button" className="reply-bar-close" onClick={() => setReplyTo(null)}>✕</button>
+          </div>
+        )}
+        <div className="message-input-row">
         <input
           ref={fileInputRef}
           type="file"
@@ -782,9 +1102,38 @@ function Chat() {
           placeholder="Type a message..."
           className="message-input"
         />
+        <div style={{ position: "relative" }} ref={emojiPickerRef}>
+          <button
+            type="button"
+            className="emoji-btn"
+            onClick={() => setShowEmojiPicker(p => !p)}
+            title="Emoji"
+          >
+            😊
+          </button>
+          {showEmojiPicker && (
+            <div className="emoji-picker-wrap">
+              {EMOJIS.map(em => (
+                <span
+                  key={em}
+                  className="emoji-item"
+                  onClick={() => { setMessageInput(prev => prev + em); setShowEmojiPicker(false); }}
+                >
+                  {em}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
         <button type="submit" className="send-button" title="Send message" disabled={uploading}>
-          {uploading ? "⏳" : "📤"}
+          {uploading ? "⏳" : (
+            <svg viewBox="0 0 24 24" fill="none" width="20" height="20">
+              <path d="M22 2L11 13" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M22 2L15 22L11 13L2 9L22 2Z" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          )}
         </button>
+        </div>
       </form>
     </div>
 
@@ -803,6 +1152,27 @@ function Chat() {
                 disabled={leaving}
               >
                 {leaving ? "Leaving..." : "Yes, Leave"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CLEAR CHAT MODAL */}
+      {showClearModal && (
+        <div className="modal-overlay" onClick={() => setShowClearModal(false)}>
+          <div className="modal-box" onClick={e => e.stopPropagation()}>
+            <h3>Clear Chat?</h3>
+            <p>This will permanently delete all messages in <strong>{group?.groupName}</strong>. This action cannot be undone.</p>
+            <div className="modal-actions">
+              <button className="modal-btn modal-cancel" onClick={() => setShowClearModal(false)}>Cancel</button>
+              <button
+                className="modal-btn modal-confirm"
+                style={{ background: "#ff4757" }}
+                onClick={clearChat}
+                disabled={clearing}
+              >
+                {clearing ? "Clearing..." : "Clear Chat"}
               </button>
             </div>
           </div>
@@ -830,6 +1200,60 @@ function Chat() {
             <div className="modal-actions">
               <button className="modal-btn modal-cancel" onClick={() => setShowTransferModal(false)}>Cancel</button>
               <button className="modal-btn modal-confirm" onClick={transferAdminAndLeave}>Transfer &amp; Leave</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DELETE MESSAGES MODAL */}
+      {showDeleteModal && (
+        <div className="modal-overlay" onClick={() => setShowDeleteModal(false)}>
+          <div className="modal-box" onClick={e => e.stopPropagation()}>
+            <h3>Delete {selectedMsgs.size} message{selectedMsgs.size > 1 ? "s" : ""}?</h3>
+            <p>Choose how you want to delete the selected message{selectedMsgs.size > 1 ? "s" : ""}.</p>
+            <div className="del-modal-actions">
+              <button className="modal-btn modal-cancel" onClick={() => setShowDeleteModal(false)}>Cancel</button>
+              <button
+                className="modal-btn del-btn-me"
+                onClick={() => deleteSelectedMsgs("me")}
+              >
+                Delete for Me
+              </button>
+              {canDeleteForEveryone() && (
+                <button
+                  className="modal-btn del-btn-everyone"
+                  onClick={() => deleteSelectedMsgs("everyone")}
+                >
+                  Delete for Everyone
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TOAST NOTIFICATIONS */}
+      <div className="app-toast-container">
+        {toasts.map(t => (
+          <div key={t.id} className={`app-toast app-toast-${t.type}`}>
+            <span className="app-toast-icon">
+              {t.type === "success" ? "✅" : t.type === "error" ? "❌" : "ℹ️"}
+            </span>
+            <span className="app-toast-msg">{t.msg}</span>
+            <button className="app-toast-close" onClick={() => setToasts(prev => prev.filter(x => x.id !== t.id))}>✕</button>
+          </div>
+        ))}
+      </div>
+
+      {/* CONFIRM MODAL */}
+      {confirmModal && (
+        <div className="modal-overlay" onClick={() => setConfirmModal(null)}>
+          <div className="modal-box" onClick={e => e.stopPropagation()}>
+            <h3>Confirm</h3>
+            <p>{confirmModal.message}</p>
+            <div className="modal-actions">
+              <button className="modal-btn modal-cancel" onClick={() => setConfirmModal(null)}>Cancel</button>
+              <button className="modal-btn modal-confirm" style={{ background: "#ef4444" }} onClick={() => { confirmModal.onConfirm(); setConfirmModal(null); }}>Confirm</button>
             </div>
           </div>
         </div>

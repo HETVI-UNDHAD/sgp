@@ -181,7 +181,7 @@ function About() {
 
   .header-right h1 {
     font-size: 28px;
-    color: #0b3e71;
+    color: #7b1fa2;
     margin-bottom: 4px;
   }
 
@@ -200,7 +200,7 @@ function About() {
   }
 
   section h2 {
-    color: #0b3e71;
+    color: #7b1fa2;
     margin-bottom: 12px;
     font-size: 20px;
   }
@@ -235,7 +235,7 @@ function About() {
 
   .about-footer .email {
     margin-top: 8px;
-    color: #0b3e71;
+    color: #7b1fa2;
     font-weight: 500;
   }
 

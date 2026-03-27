@@ -232,13 +232,13 @@ function GroupChat() {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          background: linear-gradient(135deg,#0b3e71,#1f5fa3);
+          background: linear-gradient(135deg,#7b1fa2,#ba68c8);
           color: white;
           padding: 20px;
         }
         .back-btn {
           background: white;
-          color: #0b3e71;
+          color: #7b1fa2;
           border: none;
           padding: 8px 16px;
           border-radius: 6px;
@@ -256,7 +256,7 @@ function GroupChat() {
           max-width: 70%;
         }
         .message.own {
-          background: #0b3e71;
+          background: #7b1fa2;
           color: white;
           margin-left: auto;
           text-align: right;
@@ -291,7 +291,7 @@ function GroupChat() {
           margin-right: 10px;
         }
         .message-input button {
-          background: #0b3e71;
+          background: #7b1fa2;
           color: white;
           border: none;
           padding: 10px 20px;
@@ -303,7 +303,7 @@ function GroupChat() {
           margin-bottom: 30px;
         }
         .upload-btn {
-          background: #0b3e71;
+          background: #7b1fa2;
           color: white;
           border: none;
           padding: 12px 24px;

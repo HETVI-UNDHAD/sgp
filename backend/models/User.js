@@ -10,6 +10,8 @@ const userSchema = new mongoose.Schema({
   college: String,
   otp: String,
   isVerified: { type: Boolean, default: false },
+  lastSeen: { type: Date, default: null },
+  isOnline: { type: Boolean, default: false },
 });
 
 module.exports = mongoose.model("User", userSchema);

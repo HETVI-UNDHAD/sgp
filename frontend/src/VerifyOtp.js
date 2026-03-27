@@ -106,7 +106,7 @@ function VerifyOtp() {
           display: flex;
           justify-content: center;
           align-items: center;
-          background: linear-gradient(135deg, #0b3e71, #1f5fa3);
+          background: linear-gradient(135deg, #7b1fa2, #ba68c8);
         }
 
         .otp-card {
@@ -120,7 +120,7 @@ function VerifyOtp() {
 
         .otp-card h2 {
           margin-bottom: 10px;
-          color: #0b3e71;
+          color: #7b1fa2;
         }
 
         .sub-text {
@@ -142,14 +142,14 @@ function VerifyOtp() {
 
         .otp-card input:focus {
           outline: none;
-          border-color: #0b3e71;
-          box-shadow: 0 0 0 2px rgba(11,62,113,0.2);
+          border-color: #7b1fa2;
+          box-shadow: 0 0 0 2px rgba(123,31,162,0.2);
         }
 
         .otp-card button {
           width: 100%;
           padding: 14px;
-          background: #0b3e71;
+          background: #7b1fa2;
           color: white;
           border: none;
           border-radius: 8px;
@@ -165,13 +165,13 @@ function VerifyOtp() {
         }
 
         .otp-card button:hover:not(:disabled) {
-          background: #082c50;
+          background: #5e35b1;
         }
 
         .back-login {
           margin-top: 18px;
           font-size: 13px;
-          color: #0b3e71;
+          color: #7b1fa2;
           cursor: pointer;
         }
 
