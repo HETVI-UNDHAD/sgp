@@ -32,14 +32,19 @@ app.use(
     origin: true,
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE"],
+    exposedHeaders: ["Content-Disposition"],
   })
 );
 
 // ✅ BODY PARSER
 app.use(express.json({ limit: "5mb" }));
 
-// ✅ SERVE UPLOADS
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+// ✅ SERVE UPLOADS with CORS headers
+app.use("/uploads", (req, res, next) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+  next();
+}, express.static(path.join(__dirname, "uploads")));
 
 /* =====================================================
    SOCKET.IO

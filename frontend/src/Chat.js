@@ -480,7 +480,7 @@ function Chat() {
       const relUrl = res.data.file.fileUrl;
       const messageData = {
         content: `📄 ${file.name}`,
-        fileUrl: `${API_BASE}${relUrl}`,
+        fileUrl: relUrl,
         fileType: "document",
         sender: userId,
         senderName: userName,
@@ -533,7 +533,7 @@ function Chat() {
       const relUrl = res.data.file.fileUrl;
       const messageData = {
         content: `${icon} ${file.name}`,
-        fileUrl: `${API_BASE}${relUrl}`,
+        fileUrl: relUrl,
         fileType: isVideo ? "video" : "photo",
         sender: userId,
         senderName: userName,
@@ -559,6 +559,42 @@ function Chat() {
     }
   };
 
+  // Always return a correct absolute URL regardless of what is stored in DB
+  const resolveUrl = (fileUrl) => {
+    if (!fileUrl) return "";
+    // already relative like /uploads/xxx
+    if (fileUrl.startsWith("/")) return `${API_URL}${fileUrl}`;
+    // absolute URL — strip host and rebuild with current API_URL
+    try {
+      const u = new URL(fileUrl);
+      return `${API_URL}${u.pathname}`;
+    } catch { return fileUrl; }
+  };
+
+  // Extract original filename from content like "📄 report.pdf" or "🖼️ photo.png"
+  const extractFileName = (content) => {
+    if (!content) return "file";
+    return content.replace(/^[\p{Emoji}\s]+/u, "").trim() || "file";
+  };
+
+  const downloadFile = async (fileUrl, fileName) => {
+    try {
+      const url = resolveUrl(fileUrl);
+      const res = await axios.get(url, { responseType: "blob" });
+      if (res.status === 404) { showToast("File no longer available on server", "error"); return; }
+      const a = document.createElement("a");
+      a.href = window.URL.createObjectURL(new Blob([res.data]));
+      a.download = fileName || "file";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(a.href);
+    } catch (err) {
+      const status = err.response?.status;
+      showToast(status === 404 ? "File no longer available on server" : "Download failed", "error");
+    }
+  };
+
   const downloadAllFiles = async () => {
     setDownloading(true);
     setShowGroupMenu(false);
@@ -567,7 +603,8 @@ function Chat() {
         responseType: "blob",
       });
       const groupName = group?.groupName || "group";
-      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const blob = new Blob([res.data], { type: "application/zip" });
+      const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
       a.download = `${groupName}.zip`;
@@ -983,29 +1020,40 @@ function Chat() {
                     <>
                       {msg.fileType === "photo" ? (
                         <img
-                          src={msg.fileUrl}
+                          src={resolveUrl(msg.fileUrl)}
                           alt={msg.content}
                           className="message-media"
+                          crossOrigin="anonymous"
+                          onError={e => { e.target.style.display="none"; e.target.nextSibling.style.display="flex"; }}
                         />
                       ) : (
                         <video
-                          src={msg.fileUrl}
+                          src={resolveUrl(msg.fileUrl)}
                           controls
                           className="message-media"
+                          crossOrigin="anonymous"
+                          onError={e => { e.target.style.display="none"; e.target.nextSibling.style.display="flex"; }}
                         />
                       )}
-                      <div className="message-content">{msg.content}</div>
+                      <div className="file-unavailable" style={{display:"none"}}>⚠️ File no longer available</div>
+                      <div className="message-content media-content-row">
+                        <span>{msg.content}</span>
+                        <button
+                          className="media-download-btn"
+                          title="Download"
+                          onClick={() => downloadFile(msg.fileUrl, extractFileName(msg.content))}
+                        >
+                          ⬇
+                        </button>
+                      </div>
                     </>
                   ) : msg.fileType === "document" && msg.fileUrl ? (
-                    <a
-                      href={msg.fileUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                    <button
                       className="document-link"
-                      download
+                      onClick={() => downloadFile(msg.fileUrl, extractFileName(msg.content))}
                     >
                       {msg.content}
-                    </a>
+                    </button>
                   ) : msg.poll && msg.poll.question ? (
                     <PollMessage msg={msg} isOwnMessage={isOwnMessage} />
                   ) : msg.content ? (

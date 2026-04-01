@@ -92,8 +92,13 @@ router.post("/upload", upload.single("file"), async (req, res) => {
 router.get("/group/:groupId", async (req, res) => {
   try {
     const files = await File.find({ groupId: req.params.groupId }).sort({ createdAt: -1 });
-    console.log(`📂 Fetching files for group ${req.params.groupId}: Found ${files.length} files`);
-    res.json(files);
+    // Annotate each file with whether it physically exists on disk
+    const result = files.map(f => {
+      const obj = f.toJSON();
+      obj.exists = fs.existsSync(path.join(__dirname, "..", "uploads", f.filename));
+      return obj;
+    });
+    res.json(result);
   } catch (err) {
     console.error("Error fetching files:", err);
     res.status(500).json({ msg: "Error fetching files" });
@@ -122,27 +127,40 @@ router.get("/download-all/:groupId", async (req, res) => {
     const files = await File.find({ groupId: req.params.groupId });
     if (!files.length) return res.status(404).json({ msg: "No files found" });
 
-    // Get group name for zip filename
     const group = await Group.findById(req.params.groupId);
     const groupName = group ? group.name.replace(/[^a-zA-Z0-9_\-]/g, "_") : "group";
+    const zipName = `${groupName}.zip`;
 
     res.setHeader("Content-Type", "application/zip");
-    res.setHeader("Content-Disposition", `attachment; filename="${groupName}.zip"`);
+    res.setHeader("Content-Disposition", `attachment; filename="${zipName}"; filename*=UTF-8''${encodeURIComponent(zipName)}`);
+    res.setHeader("Access-Control-Expose-Headers", "Content-Disposition");
 
     const archive = archiver("zip", { zlib: { level: 6 } });
+    archive.on("error", (err) => { console.error("Archive error:", err); res.end(); });
     archive.pipe(res);
+
+    const imageExts = /\.(jpg|jpeg|png|gif|bmp|svg|webp)$/i;
+    const seenNames = { images: {}, documents: {} };
 
     for (const file of files) {
       const filePath = path.join(__dirname, "..", "uploads", file.filename);
-      if (fs.existsSync(filePath)) {
-        archive.file(filePath, { name: file.originalName });
+      if (!fs.existsSync(filePath)) continue;
+
+      const folder = imageExts.test(path.extname(file.originalName)) ? "images" : "documents";
+      let name = file.originalName;
+      if (seenNames[folder][name]) {
+        const ext = path.extname(name);
+        const base = path.basename(name, ext);
+        name = `${base}_${seenNames[folder][name]}${ext}`;
       }
+      seenNames[folder][file.originalName] = (seenNames[folder][file.originalName] || 1) + 1;
+      archive.file(filePath, { name: `${folder}/${name}` });
     }
 
     await archive.finalize();
   } catch (err) {
     console.error("ZIP error:", err);
-    res.status(500).json({ msg: "ZIP download failed" });
+    if (!res.headersSent) res.status(500).json({ msg: "ZIP download failed" });
   }
 });
 
