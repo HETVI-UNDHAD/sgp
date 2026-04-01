@@ -6,12 +6,13 @@ const fs = require("fs");
 const File = require("../models/File");
 const Group = require("../models/Group");
 
-// Ensure uploads directory exists
-if (!fs.existsSync("uploads")) fs.mkdirSync("uploads");
+// Always resolve uploads relative to this file, not process.cwd()
+const UPLOADS_DIR = path.join(__dirname, "..", "uploads");
+if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
 // Multer config with file validation
 const storage = multer.diskStorage({
-  destination: "uploads/",
+  destination: UPLOADS_DIR,
   filename: (req, file, cb) => {
     const uniqueName = Date.now() + "-" + Math.round(Math.random() * 1E9) + path.extname(file.originalname);
     cb(null, uniqueName);

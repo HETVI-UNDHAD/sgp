@@ -1036,10 +1036,10 @@ function Chat() {
                         />
                       )}
                       <div className="file-unavailable" style={{display:"none"}}>⚠️ File no longer available</div>
-                      <div className="message-content media-content-row">
-                        <span>{msg.content}</span>
+                      <div className="media-file-card">
+                        <span className="media-file-name">{extractFileName(msg.content)}</span>
                         <button
-                          className="media-download-btn"
+                          className="file-card-dl"
                           title="Download"
                           onClick={() => downloadFile(msg.fileUrl, extractFileName(msg.content))}
                         >
@@ -1048,12 +1048,25 @@ function Chat() {
                       </div>
                     </>
                   ) : msg.fileType === "document" && msg.fileUrl ? (
-                    <button
-                      className="document-link"
-                      onClick={() => downloadFile(msg.fileUrl, extractFileName(msg.content))}
-                    >
-                      {msg.content}
-                    </button>
+                    <div className="file-card">
+                      <div className="file-card-icon">
+                        {/\.pdf$/i.test(extractFileName(msg.content)) ? "📕" :
+                         /\.docx?$/i.test(extractFileName(msg.content)) ? "📘" :
+                         /\.xlsx?$/i.test(extractFileName(msg.content)) ? "📗" :
+                         /\.txt$/i.test(extractFileName(msg.content)) ? "📄" : "📎"}
+                      </div>
+                      <div className="file-card-info">
+                        <span className="file-card-name">{extractFileName(msg.content)}</span>
+                        <span className="file-card-time">{formatTime(msg.timestamp)}</span>
+                      </div>
+                      <button
+                        className="file-card-dl"
+                        title="Download"
+                        onClick={() => downloadFile(msg.fileUrl, extractFileName(msg.content))}
+                      >
+                        ⬇
+                      </button>
+                    </div>
                   ) : msg.poll && msg.poll.question ? (
                     <PollMessage msg={msg} isOwnMessage={isOwnMessage} />
                   ) : msg.content ? (
