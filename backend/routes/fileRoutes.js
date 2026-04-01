@@ -6,85 +6,115 @@ const fs = require("fs");
 const File = require("../models/File");
 const Group = require("../models/Group");
 
-// Always resolve uploads relative to this file, not process.cwd()
+// ── Always-correct local uploads dir ──────────────────────────────────────────
 const UPLOADS_DIR = path.join(__dirname, "..", "uploads");
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
-// Multer config with file validation
-const storage = multer.diskStorage({
-  destination: UPLOADS_DIR,
-  filename: (req, file, cb) => {
-    const uniqueName = Date.now() + "-" + Math.round(Math.random() * 1E9) + path.extname(file.originalname);
-    cb(null, uniqueName);
-  }
-});
+// ── Choose storage: Cloudinary (cloud) or local disk ─────────────────────────
+const USE_CLOUD =
+  process.env.CLOUDINARY_CLOUD_NAME &&
+  process.env.CLOUDINARY_API_KEY &&
+  process.env.CLOUDINARY_API_SECRET &&
+  process.env.CLOUDINARY_API_KEY !== "your_api_key";
 
-const upload = multer({
-  storage,
-  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit
-  fileFilter: (req, file, cb) => {
-    // allow by extension OR by mimetype substring for common file types
-    const allowed = /jpeg|jpg|png|gif|pdf|doc|docx|txt|zip|xls|xlsx|ppt|pptx|mp4|mpeg|webm|bmp|svg/;
-    const ext = allowed.test(path.extname(file.originalname).toLowerCase());
-    const mime = allowed.test(file.mimetype);
-    if (ext || mime) cb(null, true);
-    else cb(new Error("Invalid file type"));
+let upload;
+
+if (USE_CLOUD) {
+  const cloudinary = require("cloudinary").v2;
+  const { CloudinaryStorage } = require("multer-storage-cloudinary");
+
+  cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key:    process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+  });
+
+  const cloudStorage = new CloudinaryStorage({
+    cloudinary,
+    params: async (req, file) => ({
+      folder: "squadup_uploads",
+      resource_type: "auto",
+      public_id: Date.now() + "-" + Math.round(Math.random() * 1e9),
+      use_filename: false,
+    }),
+  });
+
+  upload = multer({ storage: cloudStorage, limits: { fileSize: 50 * 1024 * 1024 } });
+  console.log("☁️  File storage: Cloudinary");
+} else {
+  const storage = multer.diskStorage({
+    destination: UPLOADS_DIR,
+    filename: (req, file, cb) => {
+      const name = Date.now() + "-" + Math.round(Math.random() * 1e9) + path.extname(file.originalname);
+      cb(null, name);
+    },
+  });
+  const allowed = /jpeg|jpg|png|gif|pdf|doc|docx|txt|zip|xls|xlsx|ppt|pptx|mp4|mpeg|webm|bmp|svg/;
+  upload = multer({
+    storage,
+    limits: { fileSize: 50 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+      const ok = allowed.test(path.extname(file.originalname).toLowerCase()) || allowed.test(file.mimetype);
+      ok ? cb(null, true) : cb(new Error("Invalid file type"));
+    },
+  });
+  console.log("💾  File storage: Local disk →", UPLOADS_DIR);
+}
+
+// ── Helper: build the public URL for a saved file ────────────────────────────
+function buildFileUrl(req, file) {
+  if (USE_CLOUD) {
+    // Cloudinary returns the full URL in file.path
+    return file.path;
   }
-});
+  // Local: build absolute URL using the server's own host
+  const protocol = req.headers["x-forwarded-proto"] || "http";
+  const host = req.headers["x-forwarded-host"] || req.headers.host;
+  return `${protocol}://${host}/uploads/${file.filename}`;
+}
 
 /* ================= UPLOAD FILE ================= */
 router.post("/upload", upload.single("file"), async (req, res) => {
   try {
-    const groupId = req.body.groupId || req.body.group || req.query.groupId;
-    const userEmail = req.body.userEmail || req.body.email || req.body.senderEmail || req.body.uploadedByEmail;
-    const userName = req.body.userName || req.body.uploadedBy || req.body.senderName || req.body.name;
+    const groupId   = req.body.groupId || req.body.group || req.query.groupId;
+    const userEmail = req.body.userEmail || req.body.email || req.body.senderEmail;
+    const userName  = req.body.userName  || req.body.uploadedBy || req.body.senderName;
 
     if (!req.file) return res.status(400).json({ msg: "No file uploaded" });
-    if (!groupId) return res.status(400).json({ msg: "Group ID required" });
+    if (!groupId)  return res.status(400).json({ msg: "Group ID required" });
 
-    // Verify user is member of group
     const group = await Group.findById(groupId)
       .populate("admin", "email")
       .populate("members", "email");
-      
+
     if (!group) {
-      if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+      if (!USE_CLOUD && req.file?.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
       return res.status(404).json({ msg: "Group not found" });
     }
 
-    const memberEmails = group.members.map(m => m.email);
-    const adminEmail = group.admin?.email;
-
-    if (userEmail && (memberEmails.includes(userEmail) || adminEmail === userEmail)) {
-      // authorized
-    } else if (userEmail) {
-      // fallback: check by userId if email check fails
-      const memberIds = group.members.map(m => m._id?.toString());
-      const adminId = group.admin?._id?.toString();
-      const userId = req.body.userId || req.body.sender;
-      if (!userId || (!memberIds.includes(userId) && adminId !== userId)) {
-        if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
-        return res.status(403).json({ msg: "Not authorized" });
-      }
-    }
+    const fileUrl = buildFileUrl(req, req.file);
+    // For Cloudinary, filename is the public_id; for local it's the disk filename
+    const filename = USE_CLOUD
+      ? (req.file.filename || path.basename(req.file.path))
+      : req.file.filename;
 
     const newFile = new File({
       groupId,
-      filename: req.file.filename,
-      originalName: req.file.originalname,
-      fileUrl: `/uploads/${req.file.filename}`,
-      fileType: req.file.mimetype,
-      fileSize: req.file.size,
-      uploadedBy: userName || userEmail || "Unknown",
-      uploadedByEmail: userEmail
+      filename,
+      originalName:    req.file.originalname,
+      fileUrl,
+      fileType:        req.file.mimetype,
+      fileSize:        req.file.size,
+      uploadedBy:      userName || userEmail || "Unknown",
+      uploadedByEmail: userEmail,
     });
 
     await newFile.save();
-    console.log("✅ File saved to DB:", newFile._id, newFile.originalName);
+    console.log("✅ File saved:", filename, "→", fileUrl);
     res.json({ success: true, file: newFile });
   } catch (err) {
     console.error("Upload error:", err);
-    if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+    if (!USE_CLOUD && req.file?.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
     res.status(500).json({ msg: "Upload failed", error: err.message });
   }
 });
@@ -93,69 +123,81 @@ router.post("/upload", upload.single("file"), async (req, res) => {
 router.get("/group/:groupId", async (req, res) => {
   try {
     const files = await File.find({ groupId: req.params.groupId }).sort({ createdAt: -1 });
-    // Annotate each file with whether it physically exists on disk
     const result = files.map(f => {
       const obj = f.toJSON();
-      obj.exists = fs.existsSync(path.join(__dirname, "..", "uploads", f.filename));
+      // For local files check disk; cloud files are always available
+      obj.exists = USE_CLOUD
+        ? true
+        : fs.existsSync(path.join(UPLOADS_DIR, f.filename));
       return obj;
     });
     res.json(result);
   } catch (err) {
-    console.error("Error fetching files:", err);
     res.status(500).json({ msg: "Error fetching files" });
   }
 });
 
-/* ================= DOWNLOAD FILE ================= */
+/* ================= DOWNLOAD SINGLE FILE ================= */
 router.get("/download/:id", async (req, res) => {
   try {
     const file = await File.findById(req.params.id);
     if (!file) return res.status(404).json({ msg: "File not found" });
-    
-    const filePath = path.join(__dirname, "..", "uploads", file.filename);
+
+    if (USE_CLOUD) {
+      // Redirect to Cloudinary URL
+      return res.redirect(file.fileUrl);
+    }
+
+    const filePath = path.join(UPLOADS_DIR, file.filename);
     if (!fs.existsSync(filePath)) return res.status(404).json({ msg: "File not found on server" });
-    
     res.download(filePath, file.originalName);
-  } catch (err) {
+  } catch {
     res.status(500).json({ msg: "Download failed" });
   }
 });
 
-/* ================= DOWNLOAD ALL FILES AS ZIP ================= */
+/* ================= DOWNLOAD ALL AS ZIP ================= */
 router.get("/download-all/:groupId", async (req, res) => {
   try {
     const archiver = require("archiver");
-    const files = await File.find({ groupId: req.params.groupId });
+    const axios    = require("axios");
+    const files    = await File.find({ groupId: req.params.groupId });
     if (!files.length) return res.status(404).json({ msg: "No files found" });
 
-    const group = await Group.findById(req.params.groupId);
-    const groupName = group ? group.name.replace(/[^a-zA-Z0-9_\-]/g, "_") : "group";
-    const zipName = `${groupName}.zip`;
+    const group    = await Group.findById(req.params.groupId);
+    const zipName  = `${(group?.name || "group").replace(/[^a-zA-Z0-9_-]/g, "_")}.zip`;
 
     res.setHeader("Content-Type", "application/zip");
-    res.setHeader("Content-Disposition", `attachment; filename="${zipName}"; filename*=UTF-8''${encodeURIComponent(zipName)}`);
+    res.setHeader("Content-Disposition", `attachment; filename="${zipName}"`);
     res.setHeader("Access-Control-Expose-Headers", "Content-Disposition");
 
     const archive = archiver("zip", { zlib: { level: 6 } });
-    archive.on("error", (err) => { console.error("Archive error:", err); res.end(); });
+    archive.on("error", err => { console.error(err); res.end(); });
     archive.pipe(res);
 
     const imageExts = /\.(jpg|jpeg|png|gif|bmp|svg|webp)$/i;
-    const seenNames = { images: {}, documents: {} };
+    const seen = { images: {}, documents: {} };
 
     for (const file of files) {
-      const filePath = path.join(__dirname, "..", "uploads", file.filename);
-      if (!fs.existsSync(filePath)) continue;
-
       const folder = imageExts.test(path.extname(file.originalName)) ? "images" : "documents";
       let name = file.originalName;
-      if (seenNames[folder][name]) {
-        const ext = path.extname(name);
+      if (seen[folder][name]) {
+        const ext  = path.extname(name);
         const base = path.basename(name, ext);
-        name = `${base}_${seenNames[folder][name]}${ext}`;
+        name = `${base}_${seen[folder][name]}${ext}`;
       }
-      seenNames[folder][file.originalName] = (seenNames[folder][file.originalName] || 1) + 1;
-      archive.file(filePath, { name: `${folder}/${name}` });
+      seen[folder][file.originalName] = (seen[folder][file.originalName] || 1) + 1;
+
+      if (USE_CLOUD) {
+        // Stream from Cloudinary URL
+        try {
+          const resp = await axios.get(file.fileUrl, { responseType: "stream" });
+          archive.append(resp.data, { name: `${folder}/${name}` });
+        } catch { /* skip unreachable files */ }
+      } else {
+        const filePath = path.join(UPLOADS_DIR, file.filename);
+        if (fs.existsSync(filePath)) archive.file(filePath, { name: `${folder}/${name}` });
+      }
     }
 
     await archive.finalize();
@@ -168,23 +210,28 @@ router.get("/download-all/:groupId", async (req, res) => {
 /* ================= DELETE FILE ================= */
 router.delete("/delete/:id", async (req, res) => {
   try {
-    const userEmail = req.body.userEmail || req.body.email || req.body.senderEmail || req.body.uploadedByEmail;
+    const userEmail = req.body.userEmail || req.body.email;
     const file = await File.findById(req.params.id);
-
     if (!file) return res.status(404).json({ msg: "File not found" });
 
-    // Only uploader or admin can delete
     const group = await Group.findById(file.groupId).populate("admin", "email");
-    if (file.uploadedByEmail !== userEmail && group.admin.email !== userEmail) {
+    if (file.uploadedByEmail !== userEmail && group?.admin?.email !== userEmail) {
       return res.status(403).json({ msg: "Not authorized to delete" });
     }
 
-    const filePath = path.join(__dirname, "..", "uploads", file.filename);
-    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    if (USE_CLOUD) {
+      try {
+        const cloudinary = require("cloudinary").v2;
+        await cloudinary.uploader.destroy(file.filename, { resource_type: "auto" });
+      } catch {}
+    } else {
+      const filePath = path.join(UPLOADS_DIR, file.filename);
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    }
 
     await File.findByIdAndDelete(req.params.id);
     res.json({ success: true, msg: "File deleted" });
-  } catch (err) {
+  } catch {
     res.status(500).json({ msg: "Delete failed" });
   }
 });

@@ -39,12 +39,57 @@ app.use(
 // ✅ BODY PARSER
 app.use(express.json({ limit: "5mb" }));
 
-// ✅ SERVE UPLOADS with CORS headers
+// ✅ SERVE UPLOADS — if file missing locally, proxy from the URL stored in DB
+const fs = require("fs");
+const https = require("https");
+const http2 = require("http");
+const UPLOADS_PATH = path.join(__dirname, "uploads");
+
 app.use("/uploads", (req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
   next();
-}, express.static(path.join(__dirname, "uploads")));
+}, express.static(UPLOADS_PATH), async (req, res) => {
+  // File not found locally — look it up in DB and proxy it
+  try {
+    const filename = path.basename(req.path);
+    const File = require("./models/File");
+    const Message = require("./models/Message");
+
+    // Check File collection first
+    let record = await File.findOne({ filename });
+    let remoteUrl = record?.fileUrl;
+
+    // Fallback: check Message collection
+    if (!remoteUrl) {
+      const msg = await Message.findOne({ fileUrl: { $regex: filename } });
+      remoteUrl = msg?.fileUrl;
+    }
+
+    // If URL is relative or same host — truly missing, 404
+    if (!remoteUrl || remoteUrl.startsWith("/")) {
+      return res.status(404).json({ msg: "File not found" });
+    }
+
+    // Proxy the file from the remote URL
+    const proto = remoteUrl.startsWith("https") ? https : http2;
+    proto.get(remoteUrl, (proxyRes) => {
+      if (proxyRes.statusCode !== 200) {
+        return res.status(404).json({ msg: "File not found on origin server" });
+      }
+      res.setHeader("Content-Type", proxyRes.headers["content-type"] || "application/octet-stream");
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      proxyRes.pipe(res);
+
+      // Save locally for future requests
+      const savePath = path.join(UPLOADS_PATH, filename);
+      const fileStream = fs.createWriteStream(savePath);
+      proxyRes.pipe(fileStream);
+    }).on("error", () => res.status(404).json({ msg: "File not reachable" }));
+  } catch {
+    res.status(404).json({ msg: "File not found" });
+  }
+});
 
 /* =====================================================
    SOCKET.IO

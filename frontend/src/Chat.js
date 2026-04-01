@@ -22,6 +22,8 @@ function Chat() {
   const [sidebarSearch, setSidebarSearch] = useState("");
   const [unreadCounts, setUnreadCounts] = useState({});
   const [groupOrder, setGroupOrder] = useState([]);
+  const [groupMeta, setGroupMeta] = useState({}); // { [groupId]: { lastMsg, lastTime } }
+  const [flashGroup, setFlashGroup] = useState(null); // groupId to highlight briefly
   const [downloading, setDownloading] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [selectedNewAdmin, setSelectedNewAdmin] = useState("");
@@ -235,15 +237,41 @@ function Chat() {
     });
   };
 
-  // Fetch user's groups for sidebar
+  // Fetch user's groups + last message preview for sidebar
   useEffect(() => {
     if (!userId) return;
     axios.get(`${API_URL}/api/group/user/${userId}`)
-      .then(res => {
-        setMyGroups(res.data);
-        setGroupOrder(res.data.map(g => g._id));
-        if (res.data.length > 0) {
-          const ids = res.data.map(g => g._id).join(",");
+      .then(async res => {
+        const groups = res.data;
+        setMyGroups(groups);
+
+        // Fetch last message for each group to build initial order + preview
+        const metaEntries = await Promise.all(
+          groups.map(async g => {
+            try {
+              const r = await axios.get(`${API_URL}/api/messages/group/${g._id}?userId=${userId}&limit=1`);
+              const msgs = r.data;
+              const last = msgs[msgs.length - 1];
+              return [g._id, {
+                lastMsg: last?.content || "",
+                lastTime: last?.timestamp ? new Date(last.timestamp) : new Date(0),
+              }];
+            } catch {
+              return [g._id, { lastMsg: "", lastTime: new Date(0) }];
+            }
+          })
+        );
+        const meta = Object.fromEntries(metaEntries);
+        setGroupMeta(meta);
+
+        // Sort initial order by most recent activity
+        const sorted = [...groups].sort((a, b) =>
+          (meta[b._id]?.lastTime || 0) - (meta[a._id]?.lastTime || 0)
+        );
+        setGroupOrder(sorted.map(g => g._id));
+
+        if (groups.length > 0) {
+          const ids = groups.map(g => g._id).join(",");
           axios.get(`${API_URL}/api/messages/unread?groupIds=${ids}&userEmail=${encodeURIComponent(userEmail)}`)
             .then(r => setUnreadCounts(r.data))
             .catch(() => {});
@@ -252,21 +280,28 @@ function Chat() {
       .catch(err => console.error("Groups fetch error:", err));
   }, [userId]);
 
+  // Bubble a group to top + update preview + flash highlight
+  const bubbleToTop = (gId, content, timestamp) => {
+    setGroupOrder(prev => [gId, ...prev.filter(id => id !== gId)]);
+    setGroupMeta(prev => ({
+      ...prev,
+      [gId]: { lastMsg: content || "", lastTime: new Date(timestamp || Date.now()) },
+    }));
+    // Flash highlight for 1.5s
+    setFlashGroup(gId);
+    setTimeout(() => setFlashGroup(f => f === gId ? null : f), 1500);
+  };
+
   // Track unread counts + bubble group to top when new message arrives
   useEffect(() => {
     const handleNewMsg = (messageData) => {
-      // bump unread only for groups NOT currently open
       if (messageData.groupId !== groupId) {
         setUnreadCounts(prev => ({
           ...prev,
           [messageData.groupId]: (prev[messageData.groupId] || 0) + 1,
         }));
       }
-      // always bubble the group that got a message to top
-      setGroupOrder(prev => [
-        messageData.groupId,
-        ...prev.filter(id => id !== messageData.groupId),
-      ]);
+      bubbleToTop(messageData.groupId, messageData.content, messageData.timestamp);
     };
     socket.on("receiveMessage", handleNewMsg);
     return () => socket.off("receiveMessage", handleNewMsg);
@@ -440,8 +475,7 @@ function Chat() {
       );
 
       socket.emit("sendMessage", res.data);
-      // bubble current group to top
-      setGroupOrder(prev => [groupId, ...prev.filter(id => id !== groupId)]);
+      bubbleToTop(groupId, messageInput, new Date());
     } catch (err) {
       console.error("Error sending message:", err);
       showToast("Failed to send message", "error");
@@ -495,7 +529,7 @@ function Chat() {
 
       setMessages((prev) => [...prev, msgRes.data]);
       socket.emit("sendMessage", msgRes.data);
-      setGroupOrder(prev => [groupId, ...prev.filter(id => id !== groupId)]);
+      bubbleToTop(groupId, `📄 ${file.name}`, new Date());
       setShowMenu(false);
     } catch (err) {
       console.error("Error uploading document:", err);
@@ -548,7 +582,7 @@ function Chat() {
 
       setMessages((prev) => [...prev, msgRes.data]);
       socket.emit("sendMessage", msgRes.data);
-      setGroupOrder(prev => [groupId, ...prev.filter(id => id !== groupId)]);
+      bubbleToTop(groupId, `${isVideo ? "🎬" : "🖼️"} ${file.name}`, new Date());
       setShowMenu(false);
     } catch (err) {
       console.error("Error uploading photo/video:", err);
@@ -559,16 +593,13 @@ function Chat() {
     }
   };
 
-  // Always return a correct absolute URL regardless of what is stored in DB
+  // Resolve file URL — new uploads store absolute URL (http://IP:5001/uploads/file)
+  // Old records store relative path (/uploads/file) — rebuild with current API_URL
   const resolveUrl = (fileUrl) => {
     if (!fileUrl) return "";
-    // already relative like /uploads/xxx
-    if (fileUrl.startsWith("/")) return `${API_URL}${fileUrl}`;
-    // absolute URL — strip host and rebuild with current API_URL
-    try {
-      const u = new URL(fileUrl);
-      return `${API_URL}${u.pathname}`;
-    } catch { return fileUrl; }
+    if (fileUrl.startsWith("http")) return fileUrl;  // already absolute — use as-is
+    if (fileUrl.startsWith("/")) return `${API_URL}${fileUrl}`; // relative — prepend server
+    return fileUrl;
   };
 
   // Extract original filename from content like "📄 report.pdf" or "🖼️ photo.png"
@@ -722,24 +753,44 @@ function Chat() {
           {[...myGroups]
             .sort((a, b) => groupOrder.indexOf(a._id) - groupOrder.indexOf(b._id))
             .filter(g => g.name.toLowerCase().includes(sidebarSearch.toLowerCase()))
-            .map(g => (
-            <div
-              key={g._id}
-              className={`sidebar-group-item ${g._id === groupId ? "active" : ""}`}
-              onClick={() => navigate(`/messages/${g._id}`)}
-            >
-              <div className="sidebar-group-avatar">
-                {g.name?.charAt(0).toUpperCase()}
-              </div>
-              <div className="sidebar-group-info">
-                <span className="sidebar-group-name">{g.name}</span>
-                <span className="sidebar-group-count">{g.memberCount} members</span>
-              </div>
-              {unreadCounts[g._id] > 0 && (
-                <span className="sidebar-unread">{unreadCounts[g._id]}</span>
-              )}
-            </div>
-          ))}
+            .map(g => {
+              const meta = groupMeta[g._id];
+              const lastMsg = meta?.lastMsg || "";
+              const lastTime = meta?.lastTime;
+              const timeLabel = lastTime && lastTime > new Date(0)
+                ? lastTime.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true })
+                : "";
+              const isFlashing = flashGroup === g._id;
+              return (
+                <div
+                  key={g._id}
+                  className={`sidebar-group-item ${
+                    g._id === groupId ? "active" : ""
+                  }${isFlashing ? " sidebar-group-flash" : ""}`}
+                  onClick={() => navigate(`/messages/${g._id}`)}
+                >
+                  <div className="sidebar-group-avatar">
+                    {g.name?.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="sidebar-group-info">
+                    <div className="sidebar-group-top-row">
+                      <span className="sidebar-group-name">{g.name}</span>
+                      {timeLabel && <span className="sidebar-group-time">{timeLabel}</span>}
+                    </div>
+                    <div className="sidebar-group-bottom-row">
+                      <span className="sidebar-group-preview">
+                        {lastMsg
+                          ? lastMsg.length > 28 ? lastMsg.slice(0, 28) + "…" : lastMsg
+                          : `${g.memberCount} members`}
+                      </span>
+                      {unreadCounts[g._id] > 0 && (
+                        <span className="sidebar-unread">{unreadCounts[g._id]}</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
         </div>
         {/* DRAG HANDLE */}
         <div
