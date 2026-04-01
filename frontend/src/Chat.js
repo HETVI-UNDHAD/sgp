@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
 import socket from "./socket";
@@ -46,6 +47,9 @@ function Chat() {
   const fileInputRef = useRef(null);
   const photoInputRef = useRef(null);
   const groupMenuRef = useRef(null);
+  const threeDotBtnRef = useRef(null);
+  const dropdownPortalRef = useRef(null);
+  const [dropdownPos, setDropdownPos] = useState({ top: 0, right: 0 });
   const emojiPickerRef = useRef(null);
 
   const API_BASE = API_URL;
@@ -173,7 +177,10 @@ function Chat() {
   // Close group menu + emoji picker on outside click
   useEffect(() => {
     const handleClickOutside = (e) => {
-      if (groupMenuRef.current && !groupMenuRef.current.contains(e.target)) {
+      if (
+        !(threeDotBtnRef.current && threeDotBtnRef.current.contains(e.target)) &&
+        !(dropdownPortalRef.current && dropdownPortalRef.current.contains(e.target))
+      ) {
         setShowGroupMenu(false);
         setShowMembers(false);
       }
@@ -729,19 +736,29 @@ function Chat() {
           {/* THREE DOT MENU */}
           <div className="group-menu-wrapper" ref={groupMenuRef}>
             <button
+              ref={threeDotBtnRef}
               className="three-dot-btn"
-              onClick={(e) => { 
+              onClick={(e) => {
                 e.stopPropagation();
-                setShowGroupMenu(prev => !prev); 
-                setShowMembers(false); 
+                if (!showGroupMenu) {
+                  const rect = threeDotBtnRef.current.getBoundingClientRect();
+                  setDropdownPos({ top: rect.bottom + 8, right: window.innerWidth - rect.right });
+                }
+                setShowGroupMenu(prev => !prev);
+                setShowMembers(false);
               }}
               title="Group options"
             >
               ⋮
             </button>
 
-            {showGroupMenu && (
-              <div className="group-dropdown" onClick={(e) => e.stopPropagation()}>
+            {showGroupMenu && createPortal(
+              <div
+                ref={dropdownPortalRef}
+                className="group-dropdown"
+                style={{ top: dropdownPos.top, right: dropdownPos.right }}
+                onClick={(e) => e.stopPropagation()}
+              >
 
                 {/* ── Members section ── */}
                 <button
@@ -875,7 +892,7 @@ function Chat() {
                 )}
 
               </div>
-            )}
+            , document.body)}
           </div>
         </div>
 

@@ -57,15 +57,13 @@
 
 /* GROUP DROPDOWN */
 .group-dropdown {
-  position: absolute;
-  top: 44px;
-  right: 0;
+  position: fixed;
   background: #1a1a2e;
   border: 1px solid rgba(255,255,255,0.1);
   border-radius: 14px;
-  box-shadow: 0 12px 40px rgba(0,0,0,0.6);
-  min-width: 220px;
-  z-index: 1000;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.8);
+  min-width: 230px;
+  z-index: 99999;
   overflow: hidden;
   animation: dropIn .2s ease;
 }
