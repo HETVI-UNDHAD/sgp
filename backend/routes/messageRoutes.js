@@ -48,12 +48,14 @@ router.get("/group/:groupId", async (req, res) => {
   }
 });
 
-// ✅ CLEAR all messages in a group — MUST be before /:messageId
+// ✅ CLEAR chat for this user only — MUST be before /:messageId
 router.delete("/group/:groupId/clear", async (req, res) => {
   try {
     const { groupId } = req.params;
-    const result = await Message.deleteMany({ groupId });
-    res.json({ msg: "Chat cleared successfully", deletedCount: result.deletedCount });
+    const { userId } = req.body;
+    if (!userId) return res.status(400).json({ msg: "userId required" });
+    await Message.updateMany({ groupId }, { $addToSet: { deletedFor: userId } });
+    res.json({ msg: "Chat cleared successfully" });
   } catch (err) {
     res.status(500).json({ msg: "Failed to clear chat", error: err.message });
   }

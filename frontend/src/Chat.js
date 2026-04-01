@@ -1163,7 +1163,7 @@ function Chat() {
         <div className="modal-overlay" onClick={() => setShowClearModal(false)}>
           <div className="modal-box" onClick={e => e.stopPropagation()}>
             <h3>Clear Chat?</h3>
-            <p>This will permanently delete all messages in <strong>{group?.groupName}</strong>. This action cannot be undone.</p>
+            <p>This will clear all messages for <strong>you only</strong>. Other members will still see the chat.</p>
             <div className="modal-actions">
               <button className="modal-btn modal-cancel" onClick={() => setShowClearModal(false)}>Cancel</button>
               <button
