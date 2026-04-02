@@ -19,7 +19,7 @@ function VerifyOtp() {
 
   const email = location.state?.email;
   if (!email) return <h3 style={{ textAlign: "center" }}>Invalid Access</h3>;
-
+   /* ================= TOAST ================= */
   /* ================= TOAST ================= */
   const showToast = (msg, type = "success") => {
     setToast({ show: true, msg, type });
