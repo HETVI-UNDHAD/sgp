@@ -244,7 +244,11 @@ app.use((err, req, res, next) => {
 ===================================================== */
 if (process.env.MONGO_URI) {
   mongoose
-    .connect(process.env.MONGO_URI)
+    .connect(process.env.MONGO_URI, {
+      tls: true,
+      tlsAllowInvalidCertificates: true,
+      serverSelectionTimeoutMS: 10000,
+    })
     .then(() => console.log("✅ MongoDB Connected Successfully"))
     .catch((err) => {
       console.warn("⚠️ MongoDB Connection Failed:", err.message);
